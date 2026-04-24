@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { rpcClient } from "@/orpc/client";
+
 type Profile = {
   displayName: string;
   userId: string;
@@ -15,6 +17,9 @@ export default function Home() {
   const [status, setStatus] = useState<LiffStatus>("loading");
   const [message, setMessage] = useState("Initializing LIFF...");
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [syncMessage, setSyncMessage] = useState("未同期");
+  const [apiResult, setApiResult] = useState<string>("未実行");
+  const [greetName, setGreetName] = useState("あじ恋");
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
 
   useEffect(() => {
@@ -36,11 +41,18 @@ export default function Home() {
 
         const userProfile = await liff.getProfile();
         setProfile(userProfile);
+        setSyncMessage("usersテーブルへ同期中...");
+        await rpcClient.user.upsertFromLiff({
+          userId: userProfile.userId,
+          displayName: userProfile.displayName,
+        });
+        setSyncMessage("usersテーブルへの同期が完了しました。");
         setStatus("ready");
         setMessage("LIFF initialized successfully.");
       } catch (error) {
         setStatus("error");
         setMessage(error instanceof Error ? error.message : "Unknown LIFF error.");
+        setSyncMessage("同期に失敗しました。");
       }
     };
 
@@ -52,6 +64,24 @@ export default function Home() {
     if (liff.isLoggedIn()) {
       liff.logout();
       window.location.reload();
+    }
+  };
+
+  const handleHealthCheck = async () => {
+    try {
+      const result = await rpcClient.system.health();
+      setApiResult(JSON.stringify(result, null, 2));
+    } catch (error) {
+      setApiResult(error instanceof Error ? error.message : "Unknown API error.");
+    }
+  };
+
+  const handleGreet = async () => {
+    try {
+      const result = await rpcClient.system.greet({ name: greetName });
+      setApiResult(JSON.stringify(result, null, 2));
+    } catch (error) {
+      setApiResult(error instanceof Error ? error.message : "Unknown API error.");
     }
   };
   
@@ -90,6 +120,38 @@ export default function Home() {
         ) : (
           <p className="mt-2 text-sm text-zinc-600">No profile loaded yet.</p>
         )}
+        <p className="mt-2 text-sm">
+          <span className="font-medium">Supabase sync:</span> {syncMessage}
+        </p>
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 p-4">
+        <h2 className="text-lg font-semibold">oRPC API Test</h2>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={handleHealthCheck}
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium"
+          >
+            Health Check
+          </button>
+          <input
+            value={greetName}
+            onChange={(event) => setGreetName(event.target.value)}
+            className="rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            placeholder="名前を入力"
+          />
+          <button
+            type="button"
+            onClick={handleGreet}
+            className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium"
+          >
+            Greet
+          </button>
+        </div>
+        <pre className="mt-3 overflow-x-auto rounded bg-zinc-50 p-3 text-xs">
+          {apiResult}
+        </pre>
       </section>
 
       <div className="flex gap-3">
