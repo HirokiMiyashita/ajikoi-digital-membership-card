@@ -3,6 +3,28 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 
+async function resolveRankByPoints(points: number) {
+  const rank = await prisma.rank.findFirst({
+    where: {
+      minPoints: {
+        lte: points,
+      },
+      maxPoints: {
+        gte: points,
+      },
+    },
+    orderBy: {
+      minPoints: "asc",
+    },
+  });
+
+  if (!rank) {
+    throw new Error(`No rank found for points: ${points}`);
+  }
+
+  return rank;
+}
+
 export const appRouter = {
   system: {
     health: os.handler(() => {
@@ -33,7 +55,7 @@ export const appRouter = {
         }),
       )
       .handler(async ({ input }) => {
-        await prisma.user.upsert({
+        const baseUser = await prisma.user.upsert({
           where: {
             userId: input.userId,
           },
@@ -46,9 +68,39 @@ export const appRouter = {
           },
         });
 
+        const currentRank = await resolveRankByPoints(baseUser.points);
+        const nextRankId = currentRank.id;
+        const user =
+          baseUser.nextRank === nextRankId
+            ? baseUser
+            : await prisma.user.update({
+                where: {
+                  userId: baseUser.userId,
+                },
+                data: {
+                  nextRank: nextRankId,
+                },
+              });
+
+        const nextRank = await prisma.rank.findFirst({
+          where: {
+            minPoints: {
+              gt: user.points,
+            },
+          },
+          orderBy: {
+            minPoints: "asc",
+          },
+        });
+
         return {
           ok: true,
           provider: "prisma",
+          points: user.points,
+          nextRank: user.nextRank,
+          currentRankName: currentRank.name,
+          nextRankName: nextRank?.name ?? null,
+          pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - user.points, 0) : 0,
         };
       }),
   },
