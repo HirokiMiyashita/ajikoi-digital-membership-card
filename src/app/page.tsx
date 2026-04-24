@@ -54,6 +54,7 @@ export default function Home() {
       window.location.reload();
     }
   };
+  
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-4 px-6 py-12 font-sans">
