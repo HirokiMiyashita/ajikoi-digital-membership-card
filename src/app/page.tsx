@@ -78,28 +78,8 @@ export default function Home() {
     nextRankName === null ? 100 : Math.min(((points + pointsToNextRank) === 0 ? 0 : (points / (points + pointsToNextRank)) * 100), 100);
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-md bg-[#e5e7eb] px-4 py-5 font-sans text-[#1f2937]">
-      <div className="relative -mx-4 bg-white px-4 pt-5 pb-0">
-        <header className="relative z-10 mb-4 flex items-center justify-between">
-          <button
-            type="button"
-            className="rounded-md px-2 py-1 text-xl text-[#334155] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563eb]"
-            aria-label="back"
-          >
-            {"<"}
-          </button>
-          <div className="text-center">
-            <p className="text-lg font-bold">あの味が恋しい。</p>
-            <p className="text-xs text-[#64748b]">あの味が恋しい。会員証</p>
-          </div>
-          <button
-            type="button"
-            className="rounded-md px-2 py-1 text-xl text-[#334155] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563eb]"
-            aria-label="close"
-          >
-            ×
-          </button>
-        </header>
+    <main className="mx-auto min-h-screen w-full max-w-md bg-[#e5e7eb] px-4 pb-5 font-sans text-[#1f2937]">
+      <div className="relative -mx-4 bg-white px-4 pt-4 pb-0">
         <div className="relative -mx-4 px-4 pb-0">
         <div
           aria-hidden="true"
