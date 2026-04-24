@@ -1,65 +1,105 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState } from "react";
+
+type Profile = {
+  displayName: string;
+  userId: string;
+  pictureUrl?: string;
+  statusMessage?: string;
+};
+
+type LiffStatus = "loading" | "ready" | "error";
 
 export default function Home() {
+  const [status, setStatus] = useState<LiffStatus>("loading");
+  const [message, setMessage] = useState("Initializing LIFF...");
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+
+  useEffect(() => {
+    const initializeLiff = async () => {
+      if (!liffId) {
+        setStatus("error");
+        setMessage("NEXT_PUBLIC_LIFF_ID is missing.");
+        return;
+      }
+
+      try {
+        const { default: liff } = await import("@line/liff");
+        await liff.init({ liffId });
+
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return;
+        }
+
+        const userProfile = await liff.getProfile();
+        setProfile(userProfile);
+        setStatus("ready");
+        setMessage("LIFF initialized successfully.");
+      } catch (error) {
+        setStatus("error");
+        setMessage(error instanceof Error ? error.message : "Unknown LIFF error.");
+      }
+    };
+
+    void initializeLiff();
+  }, [liffId]);
+
+  const handleLogout = async () => {
+    const { default: liff } = await import("@line/liff");
+    if (liff.isLoggedIn()) {
+      liff.logout();
+      window.location.reload();
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+    <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-4 px-6 py-12 font-sans">
+      <h1 className="text-2xl font-bold">Ajikoi LIFF Starter</h1>
+      <p className="text-sm text-zinc-600">
+        Deploy this page to Vercel and set the deployed URL as your LIFF endpoint.
+      </p>
+
+      <section className="rounded-lg border border-zinc-200 p-4">
+        <h2 className="text-lg font-semibold">Status</h2>
+        <p className="mt-2 text-sm">
+          <span className="font-medium">State:</span> {status}
+        </p>
+        <p className="text-sm">
+          <span className="font-medium">Message:</span> {message}
+        </p>
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 p-4">
+        <h2 className="text-lg font-semibold">Environment</h2>
+        <p className="mt-2 break-all text-sm">
+          <span className="font-medium">NEXT_PUBLIC_LIFF_ID:</span>{" "}
+          {liffId ?? "(not set)"}
+        </p>
+      </section>
+
+      <section className="rounded-lg border border-zinc-200 p-4">
+        <h2 className="text-lg font-semibold">Profile</h2>
+        {profile ? (
+          <pre className="mt-2 overflow-x-auto rounded bg-zinc-50 p-3 text-xs">
+            {JSON.stringify(profile, null, 2)}
+          </pre>
+        ) : (
+          <p className="mt-2 text-sm text-zinc-600">No profile loaded yet.</p>
+        )}
+      </section>
+
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white"
+        >
+          Logout
+        </button>
+      </div>
+    </main>
   );
 }
