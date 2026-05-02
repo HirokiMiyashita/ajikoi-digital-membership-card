@@ -15,6 +15,7 @@ type Profile = {
 
 export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [points, setPoints] = useState(0);
   const [currentRankName, setCurrentRankName] = useState("レギュラー");
   const [nextRankName, setNextRankName] = useState<string | null>("シルバー");
@@ -27,7 +28,9 @@ export default function Home() {
 
   useEffect(() => {
     const initializeLiff = async () => {
+      setIsProfileLoading(true);
       if (!liffId) {
+        setIsProfileLoading(false);
         return;
       }
 
@@ -55,8 +58,10 @@ export default function Home() {
         if (syncResult.checkedInToday) {
           setScanMessage("本日の入店ポイントは付与済みです。");
         }
+        setIsProfileLoading(false);
       } catch (error) {
         console.error(error);
+        setIsProfileLoading(false);
       }
     };
 
@@ -114,8 +119,9 @@ export default function Home() {
   };
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-md bg-[#f3f4f7] px-4 pb-5 font-sans text-[#1f2937]">
-      <div className="relative -mx-4 bg-white px-4 pt-4 pb-0">
+    <div className="relative">
+      <main className="mx-auto min-h-screen w-full max-w-md bg-[#f3f4f7] px-4 pb-5 font-sans text-[#1f2937]">
+        <div className="relative -mx-4 bg-white px-4 pt-4 pb-0">
         <div className="relative -mx-4 px-4 pb-0">
         <div
           aria-hidden="true"
@@ -216,7 +222,17 @@ export default function Home() {
             特典の配布をおまちください
           </p>
         </div>
-      </section>
-    </main>
+        </section>
+      </main>
+      {isProfileLoading ? (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-white/35 backdrop-blur-sm">
+          <div
+            className="h-10 w-10 animate-spin rounded-full border-4 border-[#0f766e]/25 border-t-[#0f766e]"
+            aria-hidden="true"
+          />
+          <p className="text-sm font-semibold text-[#0f172a]">会員情報を読み込み中...</p>
+        </div>
+      ) : null}
+    </div>
   );
 }
