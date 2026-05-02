@@ -19,7 +19,11 @@ export default function Home() {
   const [currentRankName, setCurrentRankName] = useState("レギュラー");
   const [nextRankName, setNextRankName] = useState<string | null>("シルバー");
   const [pointsToNextRank, setPointsToNextRank] = useState(0);
+  const [isScanning, setIsScanning] = useState(false);
+  const [checkedInToday, setCheckedInToday] = useState(false);
+  const [scanMessage, setScanMessage] = useState<string | null>(null);
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+  const afterCheckinLiffUrl = process.env.NEXT_PUBLIC_AFTER_CHECKIN_LIFF_URL;
 
   useEffect(() => {
     const initializeLiff = async () => {
@@ -47,6 +51,10 @@ export default function Home() {
         setCurrentRankName(syncResult.currentRankName);
         setNextRankName(syncResult.nextRankName);
         setPointsToNextRank(syncResult.pointsToNextRank);
+        setCheckedInToday(syncResult.checkedInToday);
+        if (syncResult.checkedInToday) {
+          setScanMessage("本日の入店ポイントは付与済みです。");
+        }
       } catch (error) {
         console.error(error);
       }
@@ -57,6 +65,53 @@ export default function Home() {
 
   const progressToNextRank =
     nextRankName === null ? 100 : Math.min(((points + pointsToNextRank) === 0 ? 0 : (points / (points + pointsToNextRank)) * 100), 100);
+
+  const handleScanAndCheckin = async () => {
+    if (!profile || isScanning) {
+      return;
+    }
+
+    setIsScanning(true);
+    setScanMessage("QRコードを読み取っています...");
+
+    try {
+      const { default: liff } = await import("@line/liff");
+
+      if (!liff.isInClient()) {
+        setScanMessage("LINEアプリ内で読み取りしてください。");
+        return;
+      }
+
+      const scanResult = await liff.scanCodeV2();
+      if (!scanResult?.value) {
+        setScanMessage("QR読み取りをキャンセルしました。");
+        return;
+      }
+
+      const result = await rpcClient.user.addVisitPoint({
+        userId: profile.userId,
+        qrValue: scanResult.value,
+      });
+
+      setPoints(result.points);
+      setCurrentRankName(result.currentRankName);
+      setNextRankName(result.nextRankName);
+      setPointsToNextRank(result.pointsToNextRank);
+      setCheckedInToday(result.checkedInToday);
+      setScanMessage("+1ポイントを付与しました。");
+
+      if (afterCheckinLiffUrl) {
+        liff.openWindow({
+          url: afterCheckinLiffUrl,
+          external: false,
+        });
+      }
+    } catch (error) {
+      setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
+    } finally {
+      setIsScanning(false);
+    }
+  };
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-md bg-[#f3f4f7] px-4 pb-5 font-sans text-[#1f2937]">
@@ -109,6 +164,19 @@ export default function Home() {
         <p className="mt-2 text-center text-sm text-[#6b7280]">
           QR読み込みで1POINT獲得できます
         </p>
+        <button
+          type="button"
+          onClick={() => void handleScanAndCheckin()}
+          disabled={!profile || isScanning || checkedInToday}
+          className="mt-4 w-full rounded-lg bg-[#0f766e] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
+        >
+          {checkedInToday ? "本日は付与済みです" : isScanning ? "読み取り中..." : "QRを読み取って入店する"}
+        </button>
+        {scanMessage ? (
+          <p className="mt-2 text-center text-xs text-[#334155]" aria-live="polite">
+            {scanMessage}
+          </p>
+        ) : null}
         <div className="-mx-5 mt-5 border-t border-[#d1d5db]">
           <Link
             href="/benefits"

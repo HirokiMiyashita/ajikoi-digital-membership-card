@@ -9,13 +9,14 @@ datasource db {
 }
 
 model User {
-  userId      String   @id
-  displayName String
-  points      Int      @default(0)
-  nextRank    String   @default("regular")
-  rank        Rank     @relation(fields: [nextRank], references: [id])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  userId         String    @id
+  displayName    String
+  points         Int       @default(0)
+  nextRank       String    @default("regular")
+  lastCheckInAt  DateTime?
+  rank           Rank      @relation(fields: [nextRank], references: [id])
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@map("users")
 }
