@@ -1,12 +1,12 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 import { adminAuthClient } from "@/lib/admin-auth-client";
 
-export default function AdminLoginPage() {
+function AdminLoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [adminId, setAdminId] = useState("");
@@ -94,5 +94,21 @@ export default function AdminLoginPage() {
         </p>
       </section>
     </main>
+  );
+}
+
+export default function AdminLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto flex min-h-screen w-full max-w-md items-center justify-center bg-[#f6f8fb] p-4">
+          <section className="w-full rounded-2xl bg-white p-6 text-sm text-[#64748b] shadow-sm">
+            ログイン画面を読み込み中...
+          </section>
+        </main>
+      }
+    >
+      <AdminLoginContent />
+    </Suspense>
   );
 }
