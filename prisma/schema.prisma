@@ -14,7 +14,12 @@ model User {
   points         Int       @default(0)
   nextRank       String    @default("regular")
   lastCheckInAt  DateTime?
+  officialAccountId String?
+  officialLinkedAt DateTime?
   rank           Rank      @relation(fields: [nextRank], references: [id])
+  officialAccount OfficialAccount? @relation(fields: [officialAccountId], references: [id])
+  checkIns       UserCheckIn[]
+  histories      UserHistory[]
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -29,4 +34,125 @@ model Rank {
   users     User[]
 
   @@map("ranks")
+}
+
+model AdminUser {
+  id           String   @id
+  passwordHash String
+  officialAccountId String?
+  officialAccount OfficialAccount? @relation(fields: [officialAccountId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("admin_user")
+}
+
+model OfficialAccount {
+  id            String      @id @default(cuid())
+  lineBasicId   String      @unique
+  name          String?
+  users         User[]
+  adminUsers    AdminUser[]
+  userHistories UserHistory[]
+  checkIns      UserCheckIn[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@map("official_accounts")
+}
+
+model UserCheckIn {
+  id                String           @id @default(cuid())
+  userId            String
+  checkedInAt       DateTime
+  isFirstVisit      Boolean
+  isRepeatVisit     Boolean
+  officialAccountId String?
+  user              User             @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  officialAccount   OfficialAccount? @relation(fields: [officialAccountId], references: [id])
+  createdAt         DateTime         @default(now())
+
+  @@index([userId, checkedInAt])
+  @@index([checkedInAt])
+  @@map("user_checkins")
+}
+
+model UserHistory {
+  id                String           @id @default(cuid())
+  targetUserId      String
+  actorType         String
+  actorId           String?
+  action            String
+  metadata          Json?
+  officialAccountId String?
+  targetUser        User             @relation(fields: [targetUserId], references: [userId], onDelete: Cascade)
+  officialAccount   OfficialAccount? @relation(fields: [officialAccountId], references: [id])
+  createdAt         DateTime         @default(now())
+
+  @@index([targetUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("user_history")
+}
+
+model AdminAuthUser {
+  id            String             @id
+  name          String
+  email         String
+  emailVerified Boolean
+  image         String?
+  username      String?            @unique
+  displayUsername String?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  sessions      AdminAuthSession[]
+  accounts      AdminAuthAccount[]
+
+  @@unique([email])
+  @@map("admin_auth_user")
+}
+
+model AdminAuthSession {
+  id        String        @id
+  expiresAt DateTime
+  token     String        @unique
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      AdminAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("admin_auth_session")
+}
+
+model AdminAuthAccount {
+  id                    String        @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  AdminAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  @@index([userId])
+  @@map("admin_auth_account")
+}
+
+model AdminAuthVerification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("admin_auth_verification")
 }

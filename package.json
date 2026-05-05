@@ -15,11 +15,14 @@
     "db:down": "docker compose down"
   },
   "dependencies": {
+    "@better-auth/prisma-adapter": "^1.6.9",
     "@line/liff": "^2.28.0",
     "@orpc/client": "^1.14.0",
     "@orpc/server": "^1.14.0",
     "@orpc/standard-server-fetch": "^1.14.0",
     "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "better-auth": "^1.6.9",
     "next": "16.2.4",
     "qrcode": "^1.5.4",
     "react": "19.2.4",

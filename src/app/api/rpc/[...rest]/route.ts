@@ -7,7 +7,9 @@ const rpcHandler = new RPCHandler(appRouter);
 async function handle(request: Request): Promise<Response> {
   const { matched, response } = await rpcHandler.handle(request, {
     prefix: "/api/rpc",
-    context: {},
+    context: {
+      request,
+    },
   });
 
   if (matched) {
