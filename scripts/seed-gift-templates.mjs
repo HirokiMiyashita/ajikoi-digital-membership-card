@@ -35,6 +35,7 @@ async function main() {
     const blob = await put(`gift-templates/template-${sortOrder}.svg`, Buffer.from(svg), {
       access: "public",
       addRandomSuffix: false,
+      allowOverwrite: true,
       contentType: "image/svg+xml",
     });
 
