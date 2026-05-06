@@ -1,5 +1,5 @@
 import { os } from "@orpc/server";
-import { GiftExpiryType, Prisma } from "@prisma/client";
+import { GiftExpiryType, Prisma, UserRole } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
@@ -324,6 +324,7 @@ type UpsertedLiffUserRow = {
   userId: string;
   points: number;
   nextRank: string;
+  role: UserRole | null;
   lastCheckInAt: Date | null;
   surveyId: string | null;
 };
@@ -803,6 +804,7 @@ export const appRouter = {
               "userId",
               "points",
               "nextRank",
+              "role",
               "lastCheckInAt",
               "surveyId"
           )
@@ -810,6 +812,7 @@ export const appRouter = {
             u."userId",
             u."points",
             u."nextRank",
+            u."role",
             u."lastCheckInAt",
             u."surveyId"
           FROM upserted u
@@ -818,6 +821,7 @@ export const appRouter = {
             u2."userId",
             u2."points",
             u2."nextRank",
+            u2."role",
             u2."lastCheckInAt",
             u2."surveyId"
           FROM "users" u2
@@ -858,6 +862,7 @@ export const appRouter = {
           pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - user.points, 0) : 0,
           checkedInToday,
           hasSurvey: Boolean(user.surveyId),
+          role: user.role,
         };
       }),
     submitOnboardingSurvey: os

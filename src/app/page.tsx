@@ -77,6 +77,7 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [points, setPoints] = useState(0);
+  const [userRole, setUserRole] = useState<"staff" | null>(null);
   const [currentRankName, setCurrentRankName] = useState("レギュラー");
   const [nextRankName, setNextRankName] = useState<string | null>("シルバー");
   const [pointsToNextRank, setPointsToNextRank] = useState(0);
@@ -157,11 +158,12 @@ export default function Home() {
 
         setProfile(userProfile);
         setPoints(syncResult.points);
+        setUserRole(syncResult.role);
         setCurrentRankName(syncResult.currentRankName);
         setNextRankName(syncResult.nextRankName);
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
-        setNeedsSurvey(!syncResult.hasSurvey);
+        setNeedsSurvey(syncResult.role === "staff" ? false : !syncResult.hasSurvey);
         if (syncResult.checkedInToday) {
           setScanMessage("本日の入店ポイントは付与済みです。");
         }
@@ -359,6 +361,22 @@ export default function Home() {
       setIsUsingGift(false);
     }
   };
+
+  if (!isProfileLoading && userRole === "staff") {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center bg-[#f3f4f7] px-6 text-center text-[#1f2937]">
+        <section className="w-full rounded-2xl bg-white px-6 py-8 shadow-sm">
+          <p className="text-sm font-semibold text-[#0f766e]">STAFF MODE</p>
+          <h1 className="mt-2 text-2xl font-bold">スタッフアカウントです</h1>
+          <p className="mt-3 text-sm leading-6 text-[#64748b]">
+            このLIFFでは一般会員向け画面を表示しません。
+            <br />
+            会員用の導線では通常アカウントをご利用ください。
+          </p>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <div className="relative">

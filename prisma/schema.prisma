@@ -11,6 +11,7 @@ datasource db {
 model User {
   userId         String    @id
   displayName    String
+  role           UserRole?
   points         Int       @default(0)
   nextRank       String    @default("regular")
   lastCheckInAt  DateTime?
@@ -27,6 +28,10 @@ model User {
   updatedAt      DateTime  @updatedAt
 
   @@map("users")
+}
+
+enum UserRole {
+  staff
 }
 
 model UserSurvey {
