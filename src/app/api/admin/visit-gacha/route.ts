@@ -6,7 +6,9 @@ import { prisma } from "@/lib/prisma";
 const visitGachaPayloadSchema = z.object({
   giftId: z.string().trim().min(1, "当選ギフトを選択してください。"),
   winProbability: z
-    .number({ invalid_type_error: "当選確率は数値で入力してください。" })
+    .coerce
+    .number()
+    .refine((value) => Number.isFinite(value), "当選確率は数値で入力してください。")
     .int("当選確率は整数で入力してください。")
     .min(0, "当選確率は0以上で入力してください。")
     .max(100, "当選確率は100以下で入力してください。"),
