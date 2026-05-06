@@ -483,7 +483,7 @@ export default function Home() {
         <div className="fixed inset-0 z-57 flex items-center justify-center bg-black/35 px-6">
           <section className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl">
             <div className="aspect-[4/3] w-full overflow-hidden bg-[#f3f4f6]">
-              <img src={selectedGift.imageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
+              <img src={selectedGift.imageUrl} alt={selectedGift.title} className="h-full w-full object-contain" />
             </div>
             <div className="p-4">
               <p className="text-4 leading-tight font-bold text-[#111827]">{selectedGift.title}</p>
