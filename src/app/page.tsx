@@ -78,6 +78,12 @@ export default function Home() {
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [points, setPoints] = useState(0);
   const [userRole, setUserRole] = useState<"staff" | null>(null);
+  const [isStaffPortal, setIsStaffPortal] = useState(false);
+  const [staffStoreIsOpen, setStaffStoreIsOpen] = useState(false);
+  const [staffCanOpen, setStaffCanOpen] = useState(false);
+  const [staffCanClose, setStaffCanClose] = useState(false);
+  const [isUpdatingStoreStatus, setIsUpdatingStoreStatus] = useState(false);
+  const [staffToastMessage, setStaffToastMessage] = useState<string | null>(null);
   const [currentRankName, setCurrentRankName] = useState("レギュラー");
   const [nextRankName, setNextRankName] = useState<string | null>("シルバー");
   const [pointsToNextRank, setPointsToNextRank] = useState(0);
@@ -164,6 +170,20 @@ export default function Home() {
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
         setNeedsSurvey(syncResult.role === "staff" ? false : !syncResult.hasSurvey);
+        if (syncResult.role === "staff") {
+          const staffStatus = await rpcClient.user.getStaffStoreStatus({
+            userId: userProfile.userId,
+          });
+          setIsStaffPortal(staffStatus.authorized);
+          setStaffStoreIsOpen(staffStatus.isOpen);
+          setStaffCanOpen(staffStatus.canOpen);
+          setStaffCanClose(staffStatus.canClose);
+        } else {
+          setIsStaffPortal(false);
+          setStaffStoreIsOpen(false);
+          setStaffCanOpen(false);
+          setStaffCanClose(false);
+        }
         if (syncResult.checkedInToday) {
           setScanMessage("本日の入店ポイントは付与済みです。");
         }
@@ -362,17 +382,59 @@ export default function Home() {
     }
   };
 
-  if (!isProfileLoading && userRole === "staff") {
+  const handleStaffStoreToggle = async () => {
+    if (!profile || isUpdatingStoreStatus) return;
+    const action: "open" | "close" = staffStoreIsOpen ? "close" : "open";
+    setIsUpdatingStoreStatus(true);
+    try {
+      const result = await rpcClient.user.toggleStaffStoreStatus({
+        userId: profile.userId,
+        action,
+      });
+      setStaffStoreIsOpen(result.isOpen);
+      setStaffToastMessage(result.isOpen ? "開店しました。" : "閉店しました。");
+      setTimeout(() => setStaffToastMessage(null), 2200);
+    } catch (error) {
+      setStaffToastMessage(error instanceof Error ? error.message : "店舗状態の更新に失敗しました。");
+      setTimeout(() => setStaffToastMessage(null), 2200);
+    } finally {
+      setIsUpdatingStoreStatus(false);
+    }
+  };
+
+  if (!isProfileLoading && isStaffPortal && userRole === "staff") {
+    const canToggle = staffStoreIsOpen ? staffCanClose : staffCanOpen;
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center bg-[#f3f4f7] px-6 text-center text-[#1f2937]">
-        <section className="w-full rounded-2xl bg-white px-6 py-8 shadow-sm">
+      <main className="mx-auto flex min-h-screen w-full max-w-md flex-col items-center justify-center bg-[#f3f4f7] px-6 text-[#1f2937]">
+        <section className="w-full rounded-2xl bg-white px-6 py-8 text-center shadow-sm">
           <p className="text-sm font-semibold text-[#0f766e]">STAFF MODE</p>
           <h1 className="mt-2 text-2xl font-bold">スタッフアカウントです</h1>
-          <p className="mt-3 text-sm leading-6 text-[#64748b]">
-            このLIFFでは一般会員向け画面を表示しません。
-            <br />
-            会員用の導線では通常アカウントをご利用ください。
+          <p className="mt-3 text-base font-semibold text-[#0f172a]">
+            現在: {staffStoreIsOpen ? "開店中" : "閉店中"}
           </p>
+          <p className="mt-3 text-sm leading-6 text-[#64748b]">
+            店舗の状態を切り替えると、会員向け画面の営業状態に反映できます。
+          </p>
+          <button
+            type="button"
+            onClick={() => void handleStaffStoreToggle()}
+            disabled={!canToggle || isUpdatingStoreStatus}
+            className="mt-5 w-full rounded-lg bg-[#0f766e] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
+          >
+            {isUpdatingStoreStatus
+              ? "更新中..."
+              : staffStoreIsOpen
+                ? "閉店する"
+                : "開店する"}
+          </button>
+          {!canToggle ? (
+            <p className="mt-2 text-xs text-[#b91c1c]">
+              {staffStoreIsOpen ? "閉店権限がありません。" : "開店権限がありません。"}
+            </p>
+          ) : null}
+          {staffToastMessage ? (
+            <p className="mt-3 text-xs font-semibold text-[#334155]">{staffToastMessage}</p>
+          ) : null}
         </section>
       </main>
     );

@@ -865,6 +865,157 @@ export const appRouter = {
           role: user.role,
         };
       }),
+    getStaffStoreStatus: os
+      .input(
+        z.object({
+          userId: z.string().min(1),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const officialAccountId = await resolveOfficialAccountId();
+        if (!officialAccountId) {
+          return {
+            ok: true,
+            authorized: false,
+            isOpen: false,
+            canOpen: false,
+            canClose: false,
+          };
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: {
+            userId: true,
+            role: true,
+            officialAccountId: true,
+          },
+        });
+        if (!user) {
+          throw new Error("ユーザーが見つかりません。");
+        }
+        if (user.role !== UserRole.staff || user.officialAccountId !== officialAccountId) {
+          return {
+            ok: true,
+            authorized: false,
+            isOpen: false,
+            canOpen: false,
+            canClose: false,
+          };
+        }
+
+        const permission = await prisma.staffStoreOperationPermission.findUnique({
+          where: {
+            userId_officialAccountId: {
+              userId: user.userId,
+              officialAccountId,
+            },
+          },
+          select: {
+            canOpen: true,
+            canClose: true,
+          },
+        });
+        if (!permission) {
+          return {
+            ok: true,
+            authorized: false,
+            isOpen: false,
+            canOpen: false,
+            canClose: false,
+          };
+        }
+
+        const status = await prisma.storeStatus.upsert({
+          where: { officialAccountId },
+          create: {
+            officialAccountId,
+            isOpen: false,
+          },
+          update: {},
+          select: {
+            isOpen: true,
+          },
+        });
+
+        return {
+          ok: true,
+          authorized: true,
+          isOpen: status.isOpen,
+          canOpen: permission.canOpen,
+          canClose: permission.canClose,
+        };
+      }),
+    toggleStaffStoreStatus: os
+      .input(
+        z.object({
+          userId: z.string().min(1),
+          action: z.enum(["open", "close"]),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const officialAccountId = await resolveOfficialAccountId();
+        if (!officialAccountId) {
+          throw new Error("公式アカウント設定が見つかりません。");
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: {
+            userId: true,
+            role: true,
+            officialAccountId: true,
+          },
+        });
+        if (!user) {
+          throw new Error("ユーザーが見つかりません。");
+        }
+        if (user.role !== UserRole.staff || user.officialAccountId !== officialAccountId) {
+          throw new Error("この操作を行う権限がありません。");
+        }
+
+        const permission = await prisma.staffStoreOperationPermission.findUnique({
+          where: {
+            userId_officialAccountId: {
+              userId: user.userId,
+              officialAccountId,
+            },
+          },
+          select: {
+            canOpen: true,
+            canClose: true,
+          },
+        });
+        if (!permission) {
+          throw new Error("この操作を行う権限がありません。");
+        }
+        if (input.action === "open" && !permission.canOpen) {
+          throw new Error("開店権限がありません。");
+        }
+        if (input.action === "close" && !permission.canClose) {
+          throw new Error("閉店権限がありません。");
+        }
+
+        const nextIsOpen = input.action === "open";
+        const status = await prisma.storeStatus.upsert({
+          where: { officialAccountId },
+          create: {
+            officialAccountId,
+            isOpen: nextIsOpen,
+          },
+          update: {
+            isOpen: nextIsOpen,
+          },
+          select: {
+            isOpen: true,
+          },
+        });
+
+        return {
+          ok: true,
+          isOpen: status.isOpen,
+        };
+      }),
     submitOnboardingSurvey: os
       .input(
         z.object({

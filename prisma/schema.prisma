@@ -24,6 +24,7 @@ model User {
   checkIns       UserCheckIn[]
   histories      UserHistory[]
   userGifts      UserGift[]
+  storeOperationPermissions StaffStoreOperationPermission[]
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -168,10 +169,40 @@ model OfficialAccount {
   userHistories UserHistory[]
   checkIns      UserCheckIn[]
   visitGachaSettings VisitGachaSetting[]
+  staffOperationPermissions StaffStoreOperationPermission[]
+  storeStatus   StoreStatus?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   @@map("official_accounts")
+}
+
+model StaffStoreOperationPermission {
+  id                String         @id @default(cuid())
+  userId            String
+  officialAccountId String
+  canOpen           Boolean        @default(false)
+  canClose          Boolean        @default(false)
+  user              User           @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  officialAccount   OfficialAccount @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@unique([userId, officialAccountId])
+  @@index([officialAccountId])
+  @@map("staff_store_operation_permissions")
+}
+
+model StoreStatus {
+  id                String          @id @default(cuid())
+  officialAccountId String          @unique
+  isOpen            Boolean         @default(false)
+  officialAccount   OfficialAccount @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([officialAccountId])
+  @@map("store_statuses")
 }
 
 model UserCheckIn {

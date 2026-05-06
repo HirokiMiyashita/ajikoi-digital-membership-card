@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 
 const roleUpdateSchema = z.object({
   role: z.union([z.literal("staff"), z.null()]),
+  officialAccountId: z.string().trim().min(1).nullable().optional(),
 });
 
 type RouteContext = {
@@ -57,14 +58,66 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ ok: false, message: "対象ユーザーが見つかりません。" }, { status: 404 });
     }
 
-    await prisma.user.update({
-      where: { userId },
-      data: {
-        role: parsed.data.role,
-      },
+    const { role, officialAccountId } = parsed.data;
+    if (role === "staff" && !officialAccountId) {
+      return NextResponse.json(
+        { ok: false, message: "スタッフ担当の公式アカウントを選択してください。" },
+        { status: 400 },
+      );
+    }
+
+    const selectableOfficialAccountId =
+      adminUser.officialAccountId ?? officialAccountId ?? null;
+    if (role === "staff") {
+      if (!selectableOfficialAccountId) {
+        return NextResponse.json(
+          { ok: false, message: "有効な公式アカウントが見つかりません。" },
+          { status: 400 },
+        );
+      }
+      const targetOfficialAccount = await prisma.officialAccount.findFirst({
+        where: adminUser.officialAccountId
+          ? { id: adminUser.officialAccountId }
+          : { id: selectableOfficialAccountId },
+        select: { id: true },
+      });
+      if (!targetOfficialAccount) {
+        return NextResponse.json(
+          { ok: false, message: "選択した公式アカウントは設定できません。" },
+          { status: 400 },
+        );
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { userId },
+        data: {
+          role,
+        },
+      });
+
+      await tx.staffStoreOperationPermission.deleteMany({
+        where: { userId },
+      });
+
+      if (role === "staff" && selectableOfficialAccountId) {
+        await tx.staffStoreOperationPermission.create({
+          data: {
+            userId,
+            officialAccountId: selectableOfficialAccountId,
+            canOpen: true,
+            canClose: true,
+          },
+        });
+      }
     });
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({
+      ok: true,
+      role,
+      officialAccountId: role === "staff" ? selectableOfficialAccountId : null,
+    });
   } catch (error) {
     console.error("/api/admin/members/[userId]/role PATCH error", error);
     return NextResponse.json({ ok: false, message: "ロール更新に失敗しました。" }, { status: 500 });
