@@ -80,6 +80,7 @@ export default function Home() {
   const [userRole, setUserRole] = useState<"staff" | null>(null);
   const [isStaffPortal, setIsStaffPortal] = useState(false);
   const [staffStoreIsOpen, setStaffStoreIsOpen] = useState(false);
+  const [storeIsOpen, setStoreIsOpen] = useState<boolean | null>(null);
   const [staffCanOpen, setStaffCanOpen] = useState(false);
   const [staffCanClose, setStaffCanClose] = useState(false);
   const [isUpdatingStoreStatus, setIsUpdatingStoreStatus] = useState(false);
@@ -170,6 +171,8 @@ export default function Home() {
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
         setNeedsSurvey(syncResult.role === "staff" ? false : !syncResult.hasSurvey);
+        const publicStoreStatus = await rpcClient.user.getStoreStatus({});
+        setStoreIsOpen(publicStoreStatus.isOpen);
         if (syncResult.role === "staff") {
           const staffStatus = await rpcClient.user.getStaffStoreStatus({
             userId: userProfile.userId,
@@ -449,6 +452,17 @@ export default function Home() {
           aria-hidden="true"
           className="absolute inset-x-0 bottom-0 h-36 rounded-t-[100%] bg-[#f3f4f7]"
         />
+        {storeIsOpen === null ? (
+          <Skeleton className="relative z-10 mx-auto mb-3 h-9 w-[76%]" />
+        ) : (
+          <div
+            className={`relative z-10 mx-auto mb-3 w-[76%] rounded-lg py-2 text-center text-sm font-bold text-white ${
+              storeIsOpen ? "bg-[#16a34a]" : "bg-[#dc2626]"
+            }`}
+          >
+            {storeIsOpen ? "開店中" : "閉店中"}
+          </div>
+        )}
         <section className="relative z-10 mx-auto h-[160px] w-[76%] rounded-xl bg-[#0f766e] p-5 text-white shadow-md">
           <p className="text-sm font-semibold">あの味が恋しい。</p>
           {isProfileLoading ? (

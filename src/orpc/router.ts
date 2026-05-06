@@ -946,6 +946,34 @@ export const appRouter = {
           canClose: permission.canClose,
         };
       }),
+    getStoreStatus: os
+      .input(z.object({}))
+      .handler(async () => {
+        const officialAccountId = await resolveOfficialAccountId();
+        if (!officialAccountId) {
+          return {
+            ok: true,
+            isOpen: false,
+          };
+        }
+
+        const status = await prisma.storeStatus.upsert({
+          where: { officialAccountId },
+          create: {
+            officialAccountId,
+            isOpen: false,
+          },
+          update: {},
+          select: {
+            isOpen: true,
+          },
+        });
+
+        return {
+          ok: true,
+          isOpen: status.isOpen,
+        };
+      }),
     toggleStaffStoreStatus: os
       .input(
         z.object({
