@@ -16,14 +16,104 @@ model User {
   lastCheckInAt  DateTime?
   officialAccountId String?
   officialLinkedAt DateTime?
+  surveyId       String?   @unique
   rank           Rank      @relation(fields: [nextRank], references: [id])
   officialAccount OfficialAccount? @relation(fields: [officialAccountId], references: [id])
+  survey         UserSurvey? @relation(fields: [surveyId], references: [id])
   checkIns       UserCheckIn[]
   histories      UserHistory[]
+  userGifts      UserGift[]
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   @@map("users")
+}
+
+model UserSurvey {
+  id                 String   @id @default(cuid())
+  gender             String
+  visitFrequency     String
+  companionType      String
+  birthDate          DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  users              User[]
+
+  @@map("user_surveys")
+}
+
+enum GiftExpiryType {
+  DAYS_AFTER_ISSUE
+  FIXED_DATE
+}
+
+model Gift {
+  id            String         @id @default(cuid())
+  title         String
+  usageGuide    String
+  expiryType    GiftExpiryType
+  expiryDays    Int?
+  expiryAt      DateTime?
+  imageUrl      String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  userGifts     UserGift[]
+  visitGachaSettings VisitGachaSetting[]
+
+  @@map("gifts")
+}
+
+model VisitGachaSetting {
+  id                String           @id @default(cuid())
+  scopeKey          String           @unique
+  officialAccountId String?
+  giftId            String
+  winProbability    Int
+  isActive          Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  officialAccount   OfficialAccount? @relation(fields: [officialAccountId], references: [id])
+  gift              Gift             @relation(fields: [giftId], references: [id], onDelete: Cascade)
+
+  @@index([officialAccountId])
+  @@index([giftId])
+  @@map("visit_gacha_settings")
+}
+
+model GiftImageTemplate {
+  id         String   @id @default(cuid())
+  name       String
+  imageUrl   String
+  sortOrder  Int      @unique
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("gift_image_templates")
+}
+
+model UserGift {
+  id                   String    @id @default(cuid())
+  userId               String
+  giftId               String
+  isUsed               Boolean   @default(false)
+  usedAt               DateTime?
+  issuedAt             DateTime  @default(now())
+  expiresAt            DateTime
+  transferredFromId    String?
+  transferredToUserId  String?
+  transferredAt        DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  user                 User      @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  gift                 Gift      @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  transferredFrom      UserGift? @relation("GiftTransfer", fields: [transferredFromId], references: [id], onDelete: SetNull)
+  transferredTo        UserGift[] @relation("GiftTransfer")
+
+  @@index([userId, isUsed])
+  @@index([giftId])
+  @@index([expiresAt])
+  @@map("user_gifts")
 }
 
 model Rank {
@@ -55,6 +145,7 @@ model OfficialAccount {
   adminUsers    AdminUser[]
   userHistories UserHistory[]
   checkIns      UserCheckIn[]
+  visitGachaSettings VisitGachaSetting[]
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 

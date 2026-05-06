@@ -12,6 +12,41 @@ type Profile = {
   statusMessage?: string;
 };
 
+const surveySteps = ["gender", "visitFrequency", "companionType", "birthDate"] as const;
+type SurveyForm = {
+  gender: "male" | "female" | "other" | null;
+  visitFrequency: "1" | "2" | "3" | "4" | "5_plus" | null;
+  companionType: "alone" | "family" | "partner_or_friends" | "coworkers" | "other" | null;
+  birthDate: string;
+};
+
+const genderOptions: Array<{ value: NonNullable<SurveyForm["gender"]>; label: string }> = [
+  { value: "male", label: "男性" },
+  { value: "female", label: "女性" },
+  { value: "other", label: "その他" },
+];
+const visitFrequencyOptions: Array<{ value: NonNullable<SurveyForm["visitFrequency"]>; label: string }> = [
+  { value: "1", label: "1回" },
+  { value: "2", label: "2回" },
+  { value: "3", label: "3回" },
+  { value: "4", label: "4回" },
+  { value: "5_plus", label: "5回以上" },
+];
+const companionOptions: Array<{ value: NonNullable<SurveyForm["companionType"]>; label: string }> = [
+  { value: "alone", label: "ひとり" },
+  { value: "family", label: "家族" },
+  { value: "partner_or_friends", label: "友人・パートナー" },
+  { value: "coworkers", label: "職場関係" },
+  { value: "other", label: "その他" },
+];
+
+function todayAsYmd() {
+  const date = new Date();
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
 
 export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -21,8 +56,19 @@ export default function Home() {
   const [nextRankName, setNextRankName] = useState<string | null>("シルバー");
   const [pointsToNextRank, setPointsToNextRank] = useState(0);
   const [isScanning, setIsScanning] = useState(false);
+  const [isGachaJudging, setIsGachaJudging] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [needsSurvey, setNeedsSurvey] = useState(false);
+  const [surveyStep, setSurveyStep] = useState(0);
+  const [isSubmittingSurvey, setIsSubmittingSurvey] = useState(false);
+  const [surveyError, setSurveyError] = useState<string | null>(null);
+  const [surveyForm, setSurveyForm] = useState<SurveyForm>({
+    gender: null,
+    visitFrequency: null,
+    companionType: null,
+    birthDate: "",
+  });
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
   const afterCheckinLiffUrl = process.env.NEXT_PUBLIC_AFTER_CHECKIN_LIFF_URL;
 
@@ -55,6 +101,7 @@ export default function Home() {
         setNextRankName(syncResult.nextRankName);
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
+        setNeedsSurvey(!syncResult.hasSurvey);
         if (syncResult.checkedInToday) {
           setScanMessage("本日の入店ポイントは付与済みです。");
         }
@@ -70,6 +117,55 @@ export default function Home() {
 
   const progressToNextRank =
     nextRankName === null ? 100 : Math.min(((points + pointsToNextRank) === 0 ? 0 : (points / (points + pointsToNextRank)) * 100), 100);
+  const surveyProgress = `${surveyStep + 1}/${surveySteps.length}`;
+  const surveyProgressPercent = ((surveyStep + 1) / surveySteps.length) * 100;
+
+  const canProceedSurveyStep = (() => {
+    const stepKey = surveySteps[surveyStep];
+    if (stepKey === "gender") return surveyForm.gender !== null;
+    if (stepKey === "visitFrequency") return surveyForm.visitFrequency !== null;
+    if (stepKey === "companionType") return surveyForm.companionType !== null;
+    return surveyForm.birthDate.length > 0;
+  })();
+
+  const handleSurveyNext = async () => {
+    if (!profile || !canProceedSurveyStep) return;
+    setSurveyError(null);
+
+    if (surveyStep < surveySteps.length - 1) {
+      setSurveyStep((prev) => prev + 1);
+      return;
+    }
+
+    if (!surveyForm.gender || !surveyForm.visitFrequency || !surveyForm.companionType || !surveyForm.birthDate) {
+      setSurveyError("入力内容をご確認ください。");
+      return;
+    }
+
+    setIsSubmittingSurvey(true);
+    try {
+      await rpcClient.user.submitOnboardingSurvey({
+        userId: profile.userId,
+        gender: surveyForm.gender,
+        visitFrequency: surveyForm.visitFrequency,
+        companionType: surveyForm.companionType,
+        birthDate: surveyForm.birthDate,
+      });
+      setNeedsSurvey(false);
+      setScanMessage("アンケート回答ありがとうございました。");
+    } catch (error) {
+      setSurveyError(error instanceof Error ? error.message : "アンケート送信に失敗しました。");
+    } finally {
+      setIsSubmittingSurvey(false);
+    }
+  };
+
+  const handleSurveyBack = () => {
+    setSurveyError(null);
+    if (surveyStep > 0) {
+      setSurveyStep((prev) => prev - 1);
+    }
+  };
 
   const handleScanAndCheckin = async () => {
     if (!profile || isScanning) {
@@ -93,6 +189,8 @@ export default function Home() {
         return;
       }
 
+      setIsGachaJudging(true);
+      setScanMessage("判定中...");
       const result = await rpcClient.user.addVisitPoint({
         userId: profile.userId,
         qrValue: scanResult.value,
@@ -103,7 +201,12 @@ export default function Home() {
       setNextRankName(result.nextRankName);
       setPointsToNextRank(result.pointsToNextRank);
       setCheckedInToday(result.checkedInToday);
-      setScanMessage("+1ポイントを付与しました。");
+      const gachaMessage = result.gacha?.executed
+        ? result.gacha.won
+          ? `ガチャ当選！「${result.gacha.giftTitle ?? "ギフト"}」を獲得しました。`
+          : "ガチャはハズレでした。"
+        : "";
+      setScanMessage(gachaMessage ? `+1ポイントを付与しました。${gachaMessage}` : "+1ポイントを付与しました。");
 
       if (afterCheckinLiffUrl) {
         liff.openWindow({
@@ -114,6 +217,7 @@ export default function Home() {
     } catch (error) {
       setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
     } finally {
+      setIsGachaJudging(false);
       setIsScanning(false);
     }
   };
@@ -231,6 +335,134 @@ export default function Home() {
             aria-hidden="true"
           />
           <p className="text-sm font-semibold text-[#0f172a]">会員情報を読み込み中...</p>
+        </div>
+      ) : null}
+      {isGachaJudging ? (
+        <div className="fixed inset-0 z-55 flex flex-col items-center justify-center gap-3 bg-white/35 backdrop-blur-sm">
+          <div
+            className="h-10 w-10 animate-spin rounded-full border-4 border-[#0f766e]/25 border-t-[#0f766e]"
+            aria-hidden="true"
+          />
+          <p className="text-sm font-semibold text-[#0f172a]">判定中...</p>
+        </div>
+      ) : null}
+      {needsSurvey && profile ? (
+        <div className="fixed inset-0 z-60 overflow-y-auto bg-[#f3f4f7]">
+          <div className="mx-auto min-h-screen w-full max-w-md px-6 pb-10 pt-6 text-[#1f2937]">
+            <section className="rounded-xl bg-[#d5e8e8] px-4 py-5">
+              <p className="text-base font-semibold">アンケート回答で会員登録</p>
+            </section>
+
+            <div className="mt-5 flex items-center gap-3">
+              <div className="h-2 flex-1 rounded-full bg-[#e5e7eb]">
+                <div
+                  className="h-2 rounded-full bg-[#14b8a6] transition-all"
+                  style={{ width: `${surveyProgressPercent}%` }}
+                />
+              </div>
+              <p className="w-10 text-right text-sm font-semibold text-[#64748b]">{surveyProgress}</p>
+            </div>
+
+            <section className="mt-8">
+              <h2 className="text-center text-4xl font-bold tracking-tight">
+                {surveySteps[surveyStep] === "gender" ? "性別" : null}
+                {surveySteps[surveyStep] === "visitFrequency" ? "来店回数" : null}
+                {surveySteps[surveyStep] === "companionType" ? "一緒に来店した人" : null}
+                {surveySteps[surveyStep] === "birthDate" ? "生年月日" : null}
+              </h2>
+
+              <div className="mt-8 space-y-3">
+                {surveySteps[surveyStep] === "gender"
+                  ? genderOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setSurveyForm((prev) => ({ ...prev, gender: option.value }))}
+                        className={`w-full rounded-lg border px-4 py-4 text-left text-2xl font-semibold ${
+                          surveyForm.gender === option.value
+                            ? "border-[#14b8a6] bg-[#d5e8e8] text-[#0f172a]"
+                            : "border-[#d1d5db] bg-white text-[#1f2937]"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))
+                  : null}
+
+                {surveySteps[surveyStep] === "visitFrequency"
+                  ? visitFrequencyOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setSurveyForm((prev) => ({ ...prev, visitFrequency: option.value }))}
+                        className={`w-full rounded-lg border px-4 py-4 text-left text-2xl font-semibold ${
+                          surveyForm.visitFrequency === option.value
+                            ? "border-[#14b8a6] bg-[#d5e8e8] text-[#0f172a]"
+                            : "border-[#d1d5db] bg-white text-[#1f2937]"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))
+                  : null}
+
+                {surveySteps[surveyStep] === "companionType"
+                  ? companionOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setSurveyForm((prev) => ({ ...prev, companionType: option.value }))}
+                        className={`w-full rounded-lg border px-4 py-4 text-left text-2xl font-semibold ${
+                          surveyForm.companionType === option.value
+                            ? "border-[#14b8a6] bg-[#d5e8e8] text-[#0f172a]"
+                            : "border-[#d1d5db] bg-white text-[#1f2937]"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))
+                  : null}
+
+                {surveySteps[surveyStep] === "birthDate" ? (
+                  <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
+                    <span className="mb-2 block text-sm font-semibold text-[#64748b]">生年月日を選択</span>
+                    <input
+                      type="date"
+                      max={todayAsYmd()}
+                      value={surveyForm.birthDate}
+                      onChange={(event) => setSurveyForm((prev) => ({ ...prev, birthDate: event.target.value }))}
+                      className="w-full bg-transparent text-2xl font-semibold outline-none"
+                    />
+                  </label>
+                ) : null}
+              </div>
+            </section>
+
+            {surveyError ? <p className="mt-4 text-sm font-semibold text-[#b91c1c]">{surveyError}</p> : null}
+
+            <div className="mt-8 flex gap-3">
+              <button
+                type="button"
+                onClick={handleSurveyBack}
+                disabled={surveyStep === 0 || isSubmittingSurvey}
+                className="w-1/3 rounded-lg border border-[#cbd5e1] bg-white py-3 text-sm font-bold text-[#334155] disabled:opacity-40"
+              >
+                戻る
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSurveyNext()}
+                disabled={!canProceedSurveyStep || isSubmittingSurvey}
+                className="w-2/3 rounded-lg bg-[#0f9f99] py-3 text-base font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
+              >
+                {surveyStep === surveySteps.length - 1
+                  ? isSubmittingSurvey
+                    ? "送信中..."
+                    : "送信"
+                  : "次へ"}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

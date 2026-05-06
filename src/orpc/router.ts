@@ -1,5 +1,5 @@
 import { os } from "@orpc/server";
-import { Prisma } from "@prisma/client";
+import { GiftExpiryType, Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { adminAuth } from "@/lib/admin-auth";
@@ -81,9 +81,114 @@ async function resolveRankByPoints(points: number) {
   return rank;
 }
 
+function addDays(base: Date, days: number) {
+  const date = new Date(base);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+type VisitGachaResult = {
+  executed: boolean;
+  won: boolean;
+  winProbability: number;
+  giftTitle: string | null;
+};
+
+async function runVisitGacha(userId: string, officialAccountId: string | null): Promise<VisitGachaResult> {
+  const scopeKey = officialAccountId ?? "global";
+  const setting = await prisma.visitGachaSetting.findUnique({
+    where: { scopeKey },
+    select: {
+      giftId: true,
+      winProbability: true,
+      isActive: true,
+      gift: {
+        select: {
+          id: true,
+          title: true,
+          expiryType: true,
+          expiryDays: true,
+          expiryAt: true,
+        },
+      },
+    },
+  });
+
+  if (!setting || !setting.isActive) {
+    return {
+      executed: false,
+      won: false,
+      winProbability: 0,
+      giftTitle: null,
+    };
+  }
+
+  const winProbability = Math.max(0, Math.min(100, setting.winProbability));
+  const won = Math.random() * 100 < winProbability;
+
+  if (!won) {
+    return {
+      executed: true,
+      won: false,
+      winProbability,
+      giftTitle: null,
+    };
+  }
+
+  const gift = setting.gift;
+  if (!gift) {
+    return {
+      executed: true,
+      won: false,
+      winProbability,
+      giftTitle: null,
+    };
+  }
+
+  const now = new Date();
+  let expiresAt: Date | null = null;
+  if (gift.expiryType === GiftExpiryType.DAYS_AFTER_ISSUE) {
+    const days = gift.expiryDays ?? 0;
+    if (days > 0) {
+      expiresAt = addDays(now, days);
+    }
+  } else if (gift.expiryAt) {
+    expiresAt = gift.expiryAt;
+  }
+
+  if (!expiresAt) {
+    return {
+      executed: true,
+      won: false,
+      winProbability,
+      giftTitle: null,
+    };
+  }
+
+  await prisma.userGift.create({
+    data: {
+      userId,
+      giftId: gift.id,
+      expiresAt,
+    },
+  });
+
+  return {
+    executed: true,
+    won: true,
+    winProbability,
+    giftTitle: gift.title,
+  };
+}
+
 type MemberTrendRow = {
   day: Date;
   members: number;
+};
+
+type RepeaterTrendRow = {
+  day: Date;
+  repeaters: number;
 };
 
 type VisitTrendRow = {
@@ -93,24 +198,56 @@ type VisitTrendRow = {
   totalVisits: number;
 };
 
-type RevisitFrequency = {
+type RepeaterSummary = {
+  members: number;
+  repeaters: number;
+  repeatRate: number;
+};
+
+type VisitCountDistributionRow = {
+  label: string;
+  count: number;
+  sortOrder: number;
+};
+
+type AgeDistributionRow = {
+  label: string;
+  count: number;
+  sortOrder: number;
+};
+
+type GenderDistributionRow = {
+  label: string;
+  count: number;
+  sortOrder: number;
+};
+
+type RevisitFrequencyRow = {
   usersCount: number;
   avgVisitsIn30Days: number;
-  totalVisitsIn30Days: number;
 };
 
 async function getAdminReportMetrics(officialAccountId: string | null) {
   const officialAccountFilterUsers = officialAccountId
+    ? Prisma.sql`AND u."officialAccountId" = ${officialAccountId}`
+    : Prisma.empty;
+  const officialAccountFilterUsersNoAlias = officialAccountId
     ? Prisma.sql`AND "officialAccountId" = ${officialAccountId}`
     : Prisma.empty;
   const officialAccountFilterCheckins = officialAccountId
-    ? Prisma.sql`AND "officialAccountId" = ${officialAccountId}`
+    ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}`
     : Prisma.empty;
 
   const memberTrend = await prisma.$queryRaw<MemberTrendRow[]>`
-    WITH days AS (
+    WITH bounds AS (
+      SELECT COALESCE(MIN(u."createdAt")::date, CURRENT_DATE) AS start_day
+      FROM "users" u
+      WHERE 1 = 1
+      ${officialAccountFilterUsers}
+    ),
+    days AS (
       SELECT generate_series(
-        (CURRENT_DATE - INTERVAL '13 days')::date,
+        (SELECT start_day FROM bounds),
         CURRENT_DATE::date,
         INTERVAL '1 day'
       )::date AS day
@@ -128,9 +265,15 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
   `;
 
   const visitTrend = await prisma.$queryRaw<VisitTrendRow[]>`
-    WITH days AS (
+    WITH bounds AS (
+      SELECT COALESCE(MIN(c."checkedInAt")::date, CURRENT_DATE) AS start_day
+      FROM "user_checkins" c
+      WHERE 1 = 1
+      ${officialAccountFilterCheckins}
+    ),
+    days AS (
       SELECT generate_series(
-        (CURRENT_DATE - INTERVAL '13 days')::date,
+        (SELECT start_day FROM bounds),
         CURRENT_DATE::date,
         INTERVAL '1 day'
       )::date AS day
@@ -149,11 +292,172 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ORDER BY d.day ASC
   `;
 
-  const revisitFrequencyRows = await prisma.$queryRaw<RevisitFrequency[]>`
+  const repeaterTrend = await prisma.$queryRaw<RepeaterTrendRow[]>`
+    WITH bounds AS (
+      SELECT COALESCE(MIN(u."createdAt")::date, CURRENT_DATE) AS start_day
+      FROM "users" u
+      WHERE 1 = 1
+      ${officialAccountFilterUsers}
+    ),
+    days AS (
+      SELECT generate_series(
+        (SELECT start_day FROM bounds),
+        CURRENT_DATE::date,
+        INTERVAL '1 day'
+      )::date AS day
+    )
+    SELECT
+      d.day AS "day",
+      (
+        SELECT COUNT(*)::int
+        FROM (
+          SELECT u."userId"
+          FROM "users" u
+          LEFT JOIN "user_checkins" c
+            ON c."userId" = u."userId"
+            AND c."checkedInAt" < d.day + INTERVAL '1 day'
+            ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
+          WHERE u."createdAt" < d.day + INTERVAL '1 day'
+          ${officialAccountFilterUsers}
+          GROUP BY u."userId"
+          HAVING COUNT(c.*) >= 2
+        ) r
+      ) AS "repeaters"
+    FROM days d
+    ORDER BY d.day ASC
+  `;
+
+  const repeaterSummaryRows = await prisma.$queryRaw<RepeaterSummary[]>`
+    SELECT
+      COUNT(u."userId")::int AS "members",
+      COALESCE(
+        SUM(
+          CASE
+            WHEN (
+              SELECT COUNT(*)::int
+              FROM "user_checkins" c
+              WHERE c."userId" = u."userId"
+              ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
+            ) >= 2 THEN 1 ELSE 0
+          END
+        ),
+        0
+      )::int AS "repeaters",
+      COALESCE(
+        ROUND(
+          (
+            SUM(
+              CASE
+                WHEN (
+                  SELECT COUNT(*)::int
+                  FROM "user_checkins" c
+                  WHERE c."userId" = u."userId"
+                  ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
+                ) >= 2 THEN 1 ELSE 0
+              END
+            )::numeric
+            / NULLIF(COUNT(u."userId"), 0)::numeric
+          ) * 100,
+          2
+        ),
+        0
+      )::float AS "repeatRate"
+    FROM "users" u
+    WHERE 1 = 1
+    ${officialAccountFilterUsersNoAlias}
+  `;
+
+  const visitCountDistributionRows = await prisma.$queryRaw<VisitCountDistributionRow[]>`
+    WITH visits_per_user AS (
+      SELECT
+        u."userId",
+        COALESCE(COUNT(c.*), 0)::int AS visits
+      FROM "users" u
+      LEFT JOIN "user_checkins" c
+        ON c."userId" = u."userId"
+        ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
+      WHERE 1 = 1
+      ${officialAccountFilterUsers}
+      GROUP BY u."userId"
+    )
+    SELECT * FROM (
+      SELECT '1回'::text AS "label", COUNT(*) FILTER (WHERE visits = 1)::int AS "count", 1::int AS "sortOrder" FROM visits_per_user
+      UNION ALL
+      SELECT '2回'::text AS "label", COUNT(*) FILTER (WHERE visits = 2)::int AS "count", 2::int AS "sortOrder" FROM visits_per_user
+      UNION ALL
+      SELECT '3回'::text AS "label", COUNT(*) FILTER (WHERE visits = 3)::int AS "count", 3::int AS "sortOrder" FROM visits_per_user
+      UNION ALL
+      SELECT '4回'::text AS "label", COUNT(*) FILTER (WHERE visits = 4)::int AS "count", 4::int AS "sortOrder" FROM visits_per_user
+      UNION ALL
+      SELECT '5回〜'::text AS "label", COUNT(*) FILTER (WHERE visits >= 5)::int AS "count", 5::int AS "sortOrder" FROM visits_per_user
+    ) t
+    ORDER BY t."sortOrder" ASC
+  `;
+
+  const ageDistributionRows = await prisma.$queryRaw<AgeDistributionRow[]>`
+    WITH surveyed AS (
+      SELECT
+        CASE
+          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 10 AND 19 THEN '10代'
+          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 20 AND 29 THEN '20代'
+          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 30 AND 39 THEN '30代'
+          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 40 AND 49 THEN '40代'
+          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 50 AND 59 THEN '50代'
+          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) >= 60 THEN '60代〜'
+          ELSE 'その他'
+        END AS age_band
+      FROM "users" u
+      JOIN "user_surveys" s ON s."id" = u."surveyId"
+      WHERE 1 = 1
+      ${officialAccountFilterUsers}
+    )
+    SELECT * FROM (
+      SELECT '10代'::text AS "label", COUNT(*) FILTER (WHERE age_band = '10代')::int AS "count", 1::int AS "sortOrder" FROM surveyed
+      UNION ALL
+      SELECT '20代'::text AS "label", COUNT(*) FILTER (WHERE age_band = '20代')::int AS "count", 2::int AS "sortOrder" FROM surveyed
+      UNION ALL
+      SELECT '30代'::text AS "label", COUNT(*) FILTER (WHERE age_band = '30代')::int AS "count", 3::int AS "sortOrder" FROM surveyed
+      UNION ALL
+      SELECT '40代'::text AS "label", COUNT(*) FILTER (WHERE age_band = '40代')::int AS "count", 4::int AS "sortOrder" FROM surveyed
+      UNION ALL
+      SELECT '50代'::text AS "label", COUNT(*) FILTER (WHERE age_band = '50代')::int AS "count", 5::int AS "sortOrder" FROM surveyed
+      UNION ALL
+      SELECT '60代〜'::text AS "label", COUNT(*) FILTER (WHERE age_band = '60代〜')::int AS "count", 6::int AS "sortOrder" FROM surveyed
+      UNION ALL
+      SELECT 'その他'::text AS "label", COUNT(*) FILTER (WHERE age_band = 'その他')::int AS "count", 7::int AS "sortOrder" FROM surveyed
+    ) t
+    ORDER BY t."sortOrder" ASC
+  `;
+
+  const genderDistributionRows = await prisma.$queryRaw<GenderDistributionRow[]>`
+    WITH surveyed AS (
+      SELECT
+        CASE
+          WHEN s."gender" = 'male' THEN '男性'
+          WHEN s."gender" = 'female' THEN '女性'
+          ELSE 'その他'
+        END AS gender_label
+      FROM "users" u
+      JOIN "user_surveys" s ON s."id" = u."surveyId"
+      WHERE 1 = 1
+      ${officialAccountFilterUsers}
+    )
+    SELECT * FROM (
+      SELECT '女性'::text AS "label", COUNT(*) FILTER (WHERE gender_label = '女性')::int AS "count", 1::int AS "sortOrder" FROM surveyed
+      UNION ALL
+      SELECT '男性'::text AS "label", COUNT(*) FILTER (WHERE gender_label = '男性')::int AS "count", 2::int AS "sortOrder" FROM surveyed
+      UNION ALL
+      SELECT 'その他'::text AS "label", COUNT(*) FILTER (WHERE gender_label = 'その他')::int AS "count", 3::int AS "sortOrder" FROM surveyed
+    ) t
+    ORDER BY t."sortOrder" ASC
+  `;
+
+  const revisitFrequencyRows = await prisma.$queryRaw<RevisitFrequencyRow[]>`
     WITH first_checkins AS (
       SELECT c."userId", MIN(c."checkedInAt") AS first_at
       FROM "user_checkins" c
-      ${officialAccountId ? Prisma.sql`WHERE c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
+      WHERE 1 = 1
+      ${officialAccountFilterCheckins}
       GROUP BY c."userId"
     ),
     revisit_users AS (
@@ -179,18 +483,34 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     )
     SELECT
       COUNT(*)::int AS "usersCount",
-      COALESCE(ROUND(AVG(v.visits)::numeric, 2), 0)::float AS "avgVisitsIn30Days",
-      COALESCE(SUM(v.visits), 0)::int AS "totalVisitsIn30Days"
+      COALESCE(ROUND(AVG(v.visits)::numeric, 2), 0)::float AS "avgVisitsIn30Days"
     FROM visits_30d v
   `;
 
   return {
     memberTrend,
+    repeaterTrend,
     visitTrend,
+    repeaterSummary: repeaterSummaryRows[0] ?? {
+      members: 0,
+      repeaters: 0,
+      repeatRate: 0,
+    },
+    visitCountDistribution: visitCountDistributionRows.map((row) => ({
+      label: row.label,
+      count: row.count,
+    })),
+    ageDistribution: ageDistributionRows.map((row) => ({
+      label: row.label,
+      count: row.count,
+    })),
+    genderDistribution: genderDistributionRows.map((row) => ({
+      label: row.label,
+      count: row.count,
+    })),
     revisitFrequency: revisitFrequencyRows[0] ?? {
       usersCount: 0,
       avgVisitsIn30Days: 0,
-      totalVisitsIn30Days: 0,
     },
   };
 }
@@ -303,6 +623,63 @@ export const appRouter = {
           nextRankName: nextRank?.name ?? null,
           pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - user.points, 0) : 0,
           checkedInToday,
+          hasSurvey: Boolean(user.surveyId),
+        };
+      }),
+    submitOnboardingSurvey: os
+      .input(
+        z.object({
+          userId: z.string().min(1),
+          gender: z.enum(["male", "female", "other"]),
+          visitFrequency: z.enum(["1", "2", "3", "4", "5_plus"]),
+          companionType: z.enum(["alone", "family", "partner_or_friends", "coworkers", "other"]),
+          birthDate: z.string().min(1),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const parsedBirthDate = new Date(input.birthDate);
+        if (Number.isNaN(parsedBirthDate.getTime())) {
+          throw new Error("生年月日の形式が不正です。");
+        }
+
+        const existingUser = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: { surveyId: true },
+        });
+        if (!existingUser) {
+          throw new Error("ユーザーが見つかりません。");
+        }
+
+        let surveyId = existingUser.surveyId;
+        if (surveyId) {
+          await prisma.userSurvey.update({
+            where: { id: surveyId },
+            data: {
+              gender: input.gender,
+              visitFrequency: input.visitFrequency,
+              companionType: input.companionType,
+              birthDate: parsedBirthDate,
+            },
+          });
+        } else {
+          const created = await prisma.userSurvey.create({
+            data: {
+              gender: input.gender,
+              visitFrequency: input.visitFrequency,
+              companionType: input.companionType,
+              birthDate: parsedBirthDate,
+            },
+          });
+          surveyId = created.id;
+          await prisma.user.update({
+            where: { userId: input.userId },
+            data: { surveyId },
+          });
+        }
+
+        return {
+          ok: true,
+          surveyId,
         };
       }),
     addVisitPoint: os
@@ -416,6 +793,28 @@ export const appRouter = {
             )
         `;
 
+        const gacha = await runVisitGacha(updatedUser.userId, officialAccountId);
+        if (gacha.executed) {
+          await prisma.$executeRaw`
+            INSERT INTO "user_history"
+              ("id", "targetUserId", "actorType", "actorId", "action", "metadata", "officialAccountId", "createdAt")
+            VALUES
+              (
+                md5(random()::text || clock_timestamp()::text),
+                ${updatedUser.userId},
+                'system',
+                'visit_gacha',
+                ${gacha.won ? "visit_gacha_won" : "visit_gacha_lost"},
+                ${JSON.stringify({
+                  winProbability: gacha.winProbability,
+                  giftTitle: gacha.giftTitle,
+                })}::jsonb,
+                ${officialAccountId},
+                NOW()
+              )
+          `;
+        }
+
         return {
           ok: true,
           points: updatedUser.points,
@@ -423,6 +822,7 @@ export const appRouter = {
           nextRankName: nextRank?.name ?? null,
           pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - updatedUser.points, 0) : 0,
           checkedInToday: true,
+          gacha,
         };
       }),
   },
@@ -458,6 +858,10 @@ export const appRouter = {
           memberTrend: metrics.memberTrend.map((row) => ({
             day: row.day.toISOString(),
             members: row.members,
+          })),
+          repeaterTrend: metrics.repeaterTrend.map((row) => ({
+            day: row.day.toISOString(),
+            repeaters: row.repeaters,
           })),
           visitTrend: metrics.visitTrend.map((row) => ({
             day: row.day.toISOString(),

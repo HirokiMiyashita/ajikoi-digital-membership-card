@@ -1,10 +1,12 @@
 import { requireAdminUser } from "@/lib/admin-guard";
+import Link from "next/link";
 
 const menuItems = [
-  "管理者追加/無効化",
-  "QRトークン更新",
-  "ランク閾値確認",
-  "ログアウト",
+  { label: "ギフト管理", href: "/admin/gifts" },
+  { label: "来店ガチャ設定", href: "/admin/visit-gacha" },
+  { label: "管理者追加/無効化", href: "#" },
+  { label: "QRトークン更新", href: "#" },
+  { label: "ランク閾値確認", href: "#" },
 ];
 
 export default async function AdminMenuPage() {
@@ -15,13 +17,13 @@ export default async function AdminMenuPage() {
       <h1 className="text-xl font-bold">メニュー</h1>
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {menuItems.map((item) => (
-          <button
-            key={item}
-            type="button"
+          <Link
+            key={item.label}
+            href={item.href}
             className="rounded-xl border border-[#dbe2ea] bg-white px-4 py-4 text-left font-semibold text-[#0f172a] shadow-sm"
           >
-            {item}
-          </button>
+            {item.label}
+          </Link>
         ))}
       </section>
     </div>
