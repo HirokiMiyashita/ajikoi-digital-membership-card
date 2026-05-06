@@ -69,6 +69,10 @@ function formatDateLabel(dateString: string) {
   return `${y}/${m}/${d}`;
 }
 
+function Skeleton({ className }: { className: string }) {
+  return <div className={`animate-pulse rounded bg-[#e5e7eb] ${className}`} aria-hidden="true" />;
+}
+
 export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
@@ -304,20 +308,34 @@ export default function Home() {
         />
         <section className="relative z-10 mx-auto h-[160px] w-[76%] rounded-xl bg-[#0f766e] p-5 text-white shadow-md">
           <p className="text-sm font-semibold">あの味が恋しい。</p>
-          <h2 className="mt-1 text-[18px] font-bold tracking-wide">{currentRankName}</h2>
-          <p className="mt-2 text-base">
-            {nextRankName ? `+${pointsToNextRank}P でランクアップ` : "最高ランクです"}
-          </p>
-          <div className="mt-3 h-[3px] w-full rounded-full bg-white/25">
-            <div
-              className="h-1.5 rounded-full bg-white"
-              style={{ width: `${progressToNextRank}%` }}
-            />
-          </div>
-          <div className="mt-2 flex items-end justify-between text-sm">
-            <p>{profile?.displayName ?? "ゲスト"}</p>
-            <p>{points}P</p>
-          </div>
+          {isProfileLoading ? (
+            <>
+              <Skeleton className="mt-2 h-6 w-28 bg-white/30" />
+              <Skeleton className="mt-3 h-4 w-36 bg-white/30" />
+              <Skeleton className="mt-4 h-[3px] w-full bg-white/30" />
+              <div className="mt-3 flex items-end justify-between">
+                <Skeleton className="h-3 w-20 bg-white/30" />
+                <Skeleton className="h-4 w-12 bg-white/30" />
+              </div>
+            </>
+          ) : (
+            <>
+              <h2 className="mt-1 text-[18px] font-bold tracking-wide">{currentRankName}</h2>
+              <p className="mt-2 text-base">
+                {nextRankName ? `+${pointsToNextRank}P でランクアップ` : "最高ランクです"}
+              </p>
+              <div className="mt-3 h-[3px] w-full rounded-full bg-white/25">
+                <div
+                  className="h-1.5 rounded-full bg-white"
+                  style={{ width: `${progressToNextRank}%` }}
+                />
+              </div>
+              <div className="mt-2 flex items-end justify-between text-sm">
+                <p>{profile?.displayName ?? "ゲスト"}</p>
+                <p>{points}P</p>
+              </div>
+            </>
+          )}
         </section>
         </div>
       </div>
@@ -331,29 +349,44 @@ export default function Home() {
             ランク特典
           </span>
         </div>
-        <p className="text-center text-1xl font-bold leading-tight">
-          {nextRankName ? (
-            <>
-              あと <span className="text-[#d97706]">{pointsToNextRank}POINT</span>で{nextRankName}
-              <br />
-              <span className="text-sm">ランクアップ特典GET</span>
-            </>
-          ) : (
-            <>現在のランクは最上位です</>
-          )}
-        </p>
-        <p className="mt-2 text-center text-sm text-[#6b7280]">
-          QR読み込みで1POINT獲得できます
-        </p>
+        {isProfileLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="mx-auto h-6 w-[70%]" />
+            <Skeleton className="mx-auto h-4 w-[46%]" />
+          </div>
+        ) : (
+          <>
+            <p className="text-center text-1xl font-bold leading-tight">
+              {nextRankName ? (
+                <>
+                  あと <span className="text-[#d97706]">{pointsToNextRank}POINT</span>で{nextRankName}
+                  <br />
+                  <span className="text-sm">ランクアップ特典GET</span>
+                </>
+              ) : (
+                <>現在のランクは最上位です</>
+              )}
+            </p>
+            <p className="mt-2 text-center text-sm text-[#6b7280]">
+              QR読み込みで1POINT獲得できます
+            </p>
+          </>
+        )}
         <button
           type="button"
           onClick={() => void handleScanAndCheckin()}
-          disabled={!profile || isScanning || checkedInToday}
+          disabled={isProfileLoading || !profile || isScanning || checkedInToday}
           className="mt-4 w-full rounded-lg bg-[#0f766e] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
         >
-          {checkedInToday ? "本日は付与済みです" : isScanning ? "読み取り中..." : "QRを読み取って入店する"}
+          {isProfileLoading
+            ? "読み込み中..."
+            : checkedInToday
+              ? "本日は付与済みです"
+              : isScanning
+                ? "読み取り中..."
+                : "QRを読み取って入店する"}
         </button>
-        {scanMessage ? (
+        {scanMessage && !isProfileLoading ? (
           <p className="mt-2 text-center text-xs text-[#334155]" aria-live="polite">
             {scanMessage}
           </p>
@@ -388,7 +421,23 @@ export default function Home() {
           </span>
           持っている特典
         </h3>
-        {ownedGifts.length === 0 ? (
+        {isProfileLoading ? (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-[#d1d5db] bg-white p-3 shadow-sm">
+              <div className="flex gap-3">
+                <Skeleton className="h-16 w-20 shrink-0" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-4 w-[90%]" />
+                  <Skeleton className="h-4 w-[65%]" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between rounded-md bg-[#f3f4f6] px-3 py-2">
+                <Skeleton className="h-4 w-28" />
+                <Skeleton className="h-8 w-24" />
+              </div>
+            </div>
+          </div>
+        ) : ownedGifts.length === 0 ? (
           <div className="rounded-xl border border-[#d1d5db] bg-white px-6 py-10 text-center text-[#94a3b8] shadow-sm">
             <p className="text-base">持っている特典がありません</p>
             <p className="mt-4 text-5xl">🎁</p>
@@ -439,15 +488,6 @@ export default function Home() {
         )}
         </section>
       </main>
-      {isProfileLoading ? (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-white/35 backdrop-blur-sm">
-          <div
-            className="h-10 w-10 animate-spin rounded-full border-4 border-[#0f766e]/25 border-t-[#0f766e]"
-            aria-hidden="true"
-          />
-          <p className="text-sm font-semibold text-[#0f172a]">会員情報を読み込み中...</p>
-        </div>
-      ) : null}
       {isGachaJudging ? (
         <div className="fixed inset-0 z-55 flex flex-col items-center justify-center gap-3 bg-white/35 backdrop-blur-sm">
           <div
