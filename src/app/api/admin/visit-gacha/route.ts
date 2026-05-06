@@ -12,6 +12,20 @@ const visitGachaPayloadSchema = z.object({
     .int("当選確率は整数で入力してください。")
     .min(0, "当選確率は0以上で入力してください。")
     .max(100, "当選確率は100以下で入力してください。"),
+  rankWinProbabilities: z
+    .array(
+      z.object({
+        rankId: z.string().trim().min(1, "ランクIDが不正です。"),
+        winProbability: z
+          .coerce
+          .number()
+          .refine((value) => Number.isFinite(value), "ランク別当選率は数値で入力してください。")
+          .int("ランク別当選率は整数で入力してください。")
+          .min(0, "ランク別当選率は0以上で入力してください。")
+          .max(100, "ランク別当選率は100以下で入力してください。"),
+      }),
+    )
+    .default([]),
   isActive: z.boolean(),
 });
 
@@ -50,7 +64,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { giftId, winProbability, isActive } = parsed.data;
+    const { giftId, winProbability, rankWinProbabilities, isActive } = parsed.data;
 
     const gift = await prisma.gift.findUnique({
       where: { id: giftId },
@@ -63,21 +77,57 @@ export async function POST(request: Request) {
       );
     }
 
+    const uniqueRankRows = Array.from(
+      new Map(rankWinProbabilities.map((row) => [row.rankId, row])).values(),
+    );
+    const existingRankRows = await prisma.rank.findMany({
+      where: {
+        id: {
+          in: uniqueRankRows.map((row) => row.rankId),
+        },
+      },
+      select: { id: true },
+    });
+    if (existingRankRows.length !== uniqueRankRows.length) {
+      return Response.json(
+        { ok: false, message: "存在しないランクが指定されています。" },
+        { status: 400 },
+      );
+    }
+
     const scopeKey = adminUser.officialAccountId ?? "global";
-    await prisma.visitGachaSetting.upsert({
-      where: { scopeKey },
-      create: {
-        scopeKey,
-        officialAccountId: adminUser.officialAccountId ?? null,
-        giftId,
-        winProbability,
-        isActive,
-      },
-      update: {
-        giftId,
-        winProbability,
-        isActive,
-      },
+    await prisma.$transaction(async (tx) => {
+      const setting = await tx.visitGachaSetting.upsert({
+        where: { scopeKey },
+        create: {
+          scopeKey,
+          officialAccountId: adminUser.officialAccountId ?? null,
+          giftId,
+          winProbability,
+          isActive,
+        },
+        update: {
+          giftId,
+          winProbability,
+          isActive,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      await tx.visitGachaRankProbability.deleteMany({
+        where: { settingId: setting.id },
+      });
+      if (uniqueRankRows.length > 0) {
+        await tx.visitGachaRankProbability.createMany({
+          data: uniqueRankRows.map((row) => ({
+            settingId: setting.id,
+            rankId: row.rankId,
+            winProbability: row.winProbability,
+          })),
+        });
+      }
     });
 
     return Response.json({ ok: true });

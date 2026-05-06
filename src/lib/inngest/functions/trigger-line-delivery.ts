@@ -3,7 +3,28 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 const triggerLineDeliveryPayloadSchema = z.object({
-  message: z.string().min(1),
+  title: z.string().optional().default(""),
+  notificationText: z.string().optional().default(""),
+  messages: z
+    .array(
+      z.union([
+        z.object({
+          type: z.literal("text"),
+          text: z.string().min(1),
+        }),
+        z.object({
+          type: z.literal("image"),
+          originalContentUrl: z.string().url(),
+          previewImageUrl: z.string().url(),
+        }),
+        z.object({
+          type: z.literal("flex"),
+          altText: z.string().min(1),
+          contents: z.record(z.string(), z.unknown()),
+        }),
+      ]),
+    )
+    .min(1),
   officialAccountId: z.string().nullable(),
   targetUserIds: z.array(z.string().min(1)).optional().default([]),
   triggeredBy: z.string().min(1),
@@ -29,7 +50,7 @@ export const triggerLineDelivery = inngest.createFunction(
     triggers: [{ event: "line/delivery.triggered" }],
   },
   async ({ event, step }) => {
-    const { message, officialAccountId, targetUserIds, triggeredBy } =
+    const { title, notificationText, messages, officialAccountId, targetUserIds, triggeredBy } =
       triggerLineDeliveryPayloadSchema.parse((event as { data: unknown }).data);
     const aggregationUnit = createAggregationUnit();
 
@@ -73,7 +94,7 @@ export const triggerLineDelivery = inngest.createFunction(
               },
               body: JSON.stringify({
                 to,
-                messages: [{ type: "text", text: message }],
+                messages,
                 customAggregationUnits: [aggregationUnit],
               }),
             });
@@ -105,7 +126,15 @@ export const triggerLineDelivery = inngest.createFunction(
             'admin',
             ${triggeredBy},
             'line_trigger_delivery_executed',
-            ${JSON.stringify({ message, sent, failed, aggregationUnit })}::jsonb,
+            ${JSON.stringify({
+              title,
+              notificationText,
+              message: notificationText || (messages.find((m) => m.type === "text")?.text ?? ""),
+              messages,
+              sent,
+              failed,
+              aggregationUnit,
+            })}::jsonb,
             ${officialAccountId},
             NOW()
           )

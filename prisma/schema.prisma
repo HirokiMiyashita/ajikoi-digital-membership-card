@@ -74,10 +74,26 @@ model VisitGachaSetting {
   updatedAt         DateTime         @updatedAt
   officialAccount   OfficialAccount? @relation(fields: [officialAccountId], references: [id])
   gift              Gift             @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  rankProbabilities VisitGachaRankProbability[]
 
   @@index([officialAccountId])
   @@index([giftId])
   @@map("visit_gacha_settings")
+}
+
+model VisitGachaRankProbability {
+  id         String           @id @default(cuid())
+  settingId  String
+  rankId     String
+  winProbability Int
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  setting    VisitGachaSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
+  rank       Rank             @relation(fields: [rankId], references: [id], onDelete: Cascade)
+
+  @@unique([settingId, rankId])
+  @@index([rankId])
+  @@map("visit_gacha_rank_probabilities")
 }
 
 model GiftImageTemplate {
@@ -122,6 +138,7 @@ model Rank {
   minPoints Int
   maxPoints Int
   users     User[]
+  visitGachaRankProbabilities VisitGachaRankProbability[]
 
   @@map("ranks")
 }

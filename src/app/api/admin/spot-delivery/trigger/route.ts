@@ -5,7 +5,28 @@ import { inngest } from "@/lib/inngest/client";
 import { prisma } from "@/lib/prisma";
 
 const triggerPayloadSchema = z.object({
-  message: z.string().trim().min(1, "配信メッセージを入力してください。").max(1000, "メッセージは1000文字以内です。"),
+  title: z.string().trim().max(120, "タイトルは120文字以内です。").optional().default(""),
+  notificationText: z.string().trim().max(1000, "通知テキストは1000文字以内です。").optional().default(""),
+  messages: z
+    .array(
+      z.union([
+        z.object({
+          type: z.literal("text"),
+          text: z.string().trim().min(1).max(1000),
+        }),
+        z.object({
+          type: z.literal("image"),
+          originalContentUrl: z.string().url(),
+          previewImageUrl: z.string().url(),
+        }),
+        z.object({
+          type: z.literal("flex"),
+          altText: z.string().trim().min(1).max(400),
+          contents: z.record(z.string(), z.unknown()),
+        }),
+      ]),
+    )
+    .min(1, "配信メッセージを1つ以上追加してください。"),
   targetMode: z.enum(["all", "selected"]).default("all"),
   userIds: z.array(z.string().min(1)).optional().default([]),
 });
@@ -36,7 +57,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { message, targetMode, userIds } = parsed.data;
+    const { title, notificationText, messages, targetMode, userIds } = parsed.data;
     const targetUserIds = targetMode === "selected" ? userIds : [];
     if (targetMode === "selected" && targetUserIds.length === 0) {
       return Response.json({ ok: false, message: "配信対象ユーザーを選択してください。" }, { status: 400 });
@@ -45,7 +66,9 @@ export async function POST(request: Request) {
     await inngest.send({
       name: "line/delivery.triggered",
       data: {
-        message,
+        title,
+        notificationText,
+        messages,
         officialAccountId: adminUser.officialAccountId ?? null,
         targetUserIds,
         triggeredBy: adminUser.id,

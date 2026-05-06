@@ -7,20 +7,34 @@ type GiftOption = {
   title: string;
 };
 
+type RankOption = {
+  id: string;
+  name: string;
+};
+
 type InitialSetting = {
   giftId: string;
   winProbability: number;
   isActive: boolean;
+  rankProbabilities: Array<{
+    rankId: string;
+    winProbability: number;
+  }>;
 } | null;
 
 type Props = {
   gifts: GiftOption[];
+  ranks: RankOption[];
   initialSetting: InitialSetting;
 };
 
-export default function VisitGachaClient({ gifts, initialSetting }: Props) {
+export default function VisitGachaClient({ gifts, ranks, initialSetting }: Props) {
   const [giftId, setGiftId] = useState(initialSetting?.giftId ?? "");
   const [winProbability, setWinProbability] = useState(String(initialSetting?.winProbability ?? 20));
+  const [rankWinProbabilities, setRankWinProbabilities] = useState<Record<string, string>>(() => {
+    const entries = initialSetting?.rankProbabilities.map((row) => [row.rankId, String(row.winProbability)]) ?? [];
+    return Object.fromEntries(entries);
+  });
   const [isActive, setIsActive] = useState(initialSetting?.isActive ?? true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -34,8 +48,18 @@ export default function VisitGachaClient({ gifts, initialSetting }: Props) {
 
   const canSubmit = useMemo(() => {
     const value = Number(winProbability);
-    return giftId.length > 0 && Number.isInteger(value) && value >= 0 && value <= 100;
-  }, [giftId, winProbability]);
+    if (!(giftId.length > 0 && Number.isInteger(value) && value >= 0 && value <= 100)) {
+      return false;
+    }
+    return ranks.every((rank) => {
+      const raw = rankWinProbabilities[rank.id];
+      if (!raw || raw.trim().length === 0) {
+        return true;
+      }
+      const rankValue = Number(raw);
+      return Number.isInteger(rankValue) && rankValue >= 0 && rankValue <= 100;
+    });
+  }, [giftId, rankWinProbabilities, ranks, winProbability]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -51,6 +75,16 @@ export default function VisitGachaClient({ gifts, initialSetting }: Props) {
         body: JSON.stringify({
           giftId,
           winProbability: Number(winProbability),
+          rankWinProbabilities: ranks
+            .map((rank) => {
+              const raw = rankWinProbabilities[rank.id]?.trim() ?? "";
+              if (!raw) return null;
+              return {
+                rankId: rank.id,
+                winProbability: Number(raw),
+              };
+            })
+            .filter((row): row is { rankId: string; winProbability: number } => row !== null),
           isActive,
         }),
       });
@@ -112,6 +146,35 @@ export default function VisitGachaClient({ gifts, initialSetting }: Props) {
               {loseProbability === null ? "0〜100の整数で入力してください。" : `ハズレ確率: ${loseProbability}%`}
             </p>
           </label>
+
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-[#334155]">ランク別当選率 (%)</p>
+            <p className="text-xs text-[#64748b]">
+              未入力の場合は上の「当選確率」を使用します。
+            </p>
+            <div className="space-y-2">
+              {ranks.map((rank) => (
+                <label key={rank.id} className="grid grid-cols-[1fr_110px] items-center gap-3">
+                  <span className="text-sm text-[#334155]">{rank.name}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={1}
+                    value={rankWinProbabilities[rank.id] ?? ""}
+                    onChange={(event) =>
+                      setRankWinProbabilities((prev) => ({
+                        ...prev,
+                        [rank.id]: event.target.value,
+                      }))
+                    }
+                    placeholder="未設定"
+                    className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
 
           <div className="flex w-full items-center gap-3">
             <label className="inline-flex items-center gap-2 text-sm font-semibold text-[#334155]">

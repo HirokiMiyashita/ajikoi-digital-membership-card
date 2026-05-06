@@ -152,6 +152,12 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
       giftId: true,
       winProbability: true,
       isActive: true,
+      rankProbabilities: {
+        select: {
+          rankId: true,
+          winProbability: true,
+        },
+      },
       gift: {
         select: {
           id: true,
@@ -173,7 +179,16 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
     };
   }
 
-  const winProbability = Math.max(0, Math.min(100, setting.winProbability));
+  const user = await prisma.user.findUnique({
+    where: { userId },
+    select: {
+      nextRank: true,
+    },
+  });
+  const rankProbability = user
+    ? setting.rankProbabilities.find((row) => row.rankId === user.nextRank)
+    : null;
+  const winProbability = Math.max(0, Math.min(100, rankProbability?.winProbability ?? setting.winProbability));
   const won = Math.random() * 100 < winProbability;
 
   if (!won) {
