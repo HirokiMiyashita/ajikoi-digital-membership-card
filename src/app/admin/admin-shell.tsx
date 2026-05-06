@@ -33,6 +33,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
                 className={`block rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
                   active ? "bg-[#0f766e] text-white" : "text-[#334155] hover:bg-[#f1f5f9]"
                 }`}
@@ -54,6 +55,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
               <li key={item.href}>
                 <Link
                   href={item.href}
+                  prefetch
                   className={`block px-2 py-3 text-center text-xs font-semibold ${
                     active ? "text-[#0f766e]" : "text-[#64748b]"
                   }`}

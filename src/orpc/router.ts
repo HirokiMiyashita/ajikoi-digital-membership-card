@@ -295,19 +295,23 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
   const officialAccountFilterUsers = officialAccountId
     ? Prisma.sql`AND u."officialAccountId" = ${officialAccountId}`
     : Prisma.empty;
-  const officialAccountFilterUsersNoAlias = officialAccountId
-    ? Prisma.sql`AND "officialAccountId" = ${officialAccountId}`
-    : Prisma.empty;
   const officialAccountFilterCheckins = officialAccountId
     ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}`
     : Prisma.empty;
 
   const memberTrendPromise = prisma.$queryRaw<MemberTrendRow[]>`
-    WITH bounds AS (
-      SELECT COALESCE(MIN(u."createdAt")::date, CURRENT_DATE) AS start_day
+    WITH daily_new_members AS (
+      SELECT
+        u."createdAt"::date AS day,
+        COUNT(*)::int AS new_members
       FROM "users" u
       WHERE 1 = 1
       ${officialAccountFilterUsers}
+      GROUP BY u."createdAt"::date
+    ),
+    bounds AS (
+      SELECT COALESCE(MIN(day), CURRENT_DATE) AS start_day
+      FROM daily_new_members
     ),
     days AS (
       SELECT generate_series(
@@ -318,13 +322,9 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     )
     SELECT
       d.day AS "day",
-      (
-        SELECT COUNT(*)
-        FROM "users" u
-        WHERE u."createdAt" < (d.day + INTERVAL '1 day')
-        ${officialAccountFilterUsers}
-      )::int AS "members"
+      SUM(COALESCE(dnm.new_members, 0)) OVER (ORDER BY d.day)::int AS "members"
     FROM days d
+    LEFT JOIN daily_new_members dnm ON dnm.day = d.day
     ORDER BY d.day ASC
   `;
 
@@ -357,11 +357,36 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
   `;
 
   const repeaterTrendPromise = prisma.$queryRaw<RepeaterTrendRow[]>`
-    WITH bounds AS (
-      SELECT COALESCE(MIN(u."createdAt")::date, CURRENT_DATE) AS start_day
+    WITH eligible_users AS (
+      SELECT u."userId", u."createdAt"::date AS created_day
       FROM "users" u
       WHERE 1 = 1
       ${officialAccountFilterUsers}
+    ),
+    second_visits AS (
+      SELECT
+        ranked."userId",
+        ranked."checkedInAt"::date AS second_day
+      FROM (
+        SELECT
+          c."userId",
+          c."checkedInAt",
+          ROW_NUMBER() OVER (PARTITION BY c."userId" ORDER BY c."checkedInAt" ASC) AS rn
+        FROM "user_checkins" c
+        JOIN eligible_users eu ON eu."userId" = c."userId"
+        WHERE 1 = 1
+        ${officialAccountFilterCheckins}
+      ) ranked
+      WHERE ranked.rn = 2
+    ),
+    daily_repeaters AS (
+      SELECT sv.second_day AS day, COUNT(*)::int AS repeater_count
+      FROM second_visits sv
+      GROUP BY sv.second_day
+    ),
+    bounds AS (
+      SELECT COALESCE(MIN(eu.created_day), CURRENT_DATE) AS start_day
+      FROM eligible_users eu
     ),
     days AS (
       SELECT generate_series(
@@ -372,63 +397,40 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     )
     SELECT
       d.day AS "day",
-      (
-        SELECT COUNT(*)::int
-        FROM (
-          SELECT u."userId"
-          FROM "users" u
-          LEFT JOIN "user_checkins" c
-            ON c."userId" = u."userId"
-            AND c."checkedInAt" < d.day + INTERVAL '1 day'
-            ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
-          WHERE u."createdAt" < d.day + INTERVAL '1 day'
-          ${officialAccountFilterUsers}
-          GROUP BY u."userId"
-          HAVING COUNT(c.*) >= 2
-        ) r
-      ) AS "repeaters"
+      SUM(COALESCE(dr.repeater_count, 0)) OVER (ORDER BY d.day)::int AS "repeaters"
     FROM days d
+    LEFT JOIN daily_repeaters dr ON dr.day = d.day
     ORDER BY d.day ASC
   `;
 
   const repeaterSummaryRowsPromise = prisma.$queryRaw<RepeaterSummary[]>`
+    WITH eligible_users AS (
+      SELECT u."userId"
+      FROM "users" u
+      WHERE 1 = 1
+      ${officialAccountFilterUsers}
+    ),
+    user_visit_counts AS (
+      SELECT
+        eu."userId",
+        COUNT(c.*)::int AS visit_count
+      FROM eligible_users eu
+      LEFT JOIN "user_checkins" c
+        ON c."userId" = eu."userId"
+        ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
+      GROUP BY eu."userId"
+    ),
+    summary AS (
+      SELECT
+        COUNT(*)::int AS members,
+        COUNT(*) FILTER (WHERE uvc.visit_count >= 2)::int AS repeaters
+      FROM user_visit_counts uvc
+    )
     SELECT
-      COUNT(u."userId")::int AS "members",
-      COALESCE(
-        SUM(
-          CASE
-            WHEN (
-              SELECT COUNT(*)::int
-              FROM "user_checkins" c
-              WHERE c."userId" = u."userId"
-              ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
-            ) >= 2 THEN 1 ELSE 0
-          END
-        ),
-        0
-      )::int AS "repeaters",
-      COALESCE(
-        ROUND(
-          (
-            SUM(
-              CASE
-                WHEN (
-                  SELECT COUNT(*)::int
-                  FROM "user_checkins" c
-                  WHERE c."userId" = u."userId"
-                  ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
-                ) >= 2 THEN 1 ELSE 0
-              END
-            )::numeric
-            / NULLIF(COUNT(u."userId"), 0)::numeric
-          ) * 100,
-          2
-        ),
-        0
-      )::float AS "repeatRate"
-    FROM "users" u
-    WHERE 1 = 1
-    ${officialAccountFilterUsersNoAlias}
+      s.members AS "members",
+      s.repeaters AS "repeaters",
+      COALESCE(ROUND((s.repeaters::numeric / NULLIF(s.members, 0)::numeric) * 100, 2), 0)::float AS "repeatRate"
+    FROM summary s
   `;
 
   const visitCountDistributionRowsPromise = prisma.$queryRaw<VisitCountDistributionRow[]>`
