@@ -35,6 +35,14 @@ type ReportMetrics = {
     usersCount: number;
     avgVisitsIn30Days: number;
   };
+  latestDelivery: {
+    sentAt: string;
+    message: string;
+    sent: number;
+    opened: number | null;
+    visits: number;
+    statusLabel: string;
+  } | null;
 };
 
 function toLabel(day: string) {
@@ -66,6 +74,15 @@ function getWeekStartUtc(date: Date) {
   const diff = (day + 6) % 7;
   result.setUTCDate(result.getUTCDate() - diff);
   return result;
+}
+
+function formatRecentDeliverySentAt(iso: string) {
+  const date = new Date(iso);
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${month}/${day} ${hour}:${minute}`;
 }
 
 export default function ReportClient() {
@@ -108,6 +125,7 @@ export default function ReportClient() {
     usersCount: 0,
     avgVisitsIn30Days: 0,
   };
+  const latestDelivery = data?.latestDelivery ?? null;
 
   const memberChartData = memberTrend.map((row, index) => ({
     day: toLabel(row.day),
@@ -263,6 +281,44 @@ export default function ReportClient() {
             </div>
           </article>
         </div>
+        </section>
+      </div>
+
+      <div className="mx-auto w-[90%] space-y-2">
+        <h2 className="text-lg font-bold">直近の配信</h2>
+        <section className="rounded-xl border border-[#dbe2ea] bg-white p-4 shadow-sm">
+          {latestDelivery ? (
+            <>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-lg font-bold">{formatRecentDeliverySentAt(latestDelivery.sentAt)} の配信</p>
+                <div className="flex items-center gap-2 text-sm text-[#64748b]">
+                  <span>{formatRecentDeliverySentAt(latestDelivery.sentAt)}</span>
+                  <span className="rounded bg-[#ecfeff] px-2 py-0.5 text-xs font-semibold text-[#0f766e]">
+                    {latestDelivery.statusLabel}
+                  </span>
+                </div>
+              </div>
+              <p className="mt-3 text-base font-semibold text-[#0f172a]">{latestDelivery.message}</p>
+              <div className="mt-4 grid grid-cols-3 overflow-hidden rounded-lg border border-[#e2e8f0] bg-[#f8fafc]">
+                <div className="px-4 py-3">
+                  <p className="text-sm text-[#64748b]">配信</p>
+                  <p className="text-3xl font-bold text-[#0f172a]">{latestDelivery.sent.toLocaleString()}</p>
+                </div>
+                <div className="border-x border-[#e2e8f0] px-4 py-3">
+                  <p className="text-sm text-[#64748b]">既読</p>
+                  <p className="text-3xl font-bold text-[#0f172a]">
+                    {latestDelivery.opened === null ? "-" : latestDelivery.opened.toLocaleString()}
+                  </p>
+                </div>
+                <div className="px-4 py-3">
+                  <p className="text-sm text-[#64748b]">来店</p>
+                  <p className="text-3xl font-bold text-[#0f172a]">{latestDelivery.visits.toLocaleString()}</p>
+                </div>
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-[#64748b]">配信履歴がありません。</p>
+          )}
         </section>
       </div>
 

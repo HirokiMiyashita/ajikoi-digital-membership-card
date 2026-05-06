@@ -19,6 +19,10 @@ function chunkArray<T>(list: T[], chunkSize: number) {
   return chunks;
 }
 
+function createAggregationUnit() {
+  return `spot_${Date.now().toString(36)}`;
+}
+
 export const triggerLineDelivery = inngest.createFunction(
   {
     id: "trigger-line-delivery",
@@ -27,6 +31,7 @@ export const triggerLineDelivery = inngest.createFunction(
   async ({ event, step }) => {
     const { message, officialAccountId, targetUserIds, triggeredBy } =
       triggerLineDeliveryPayloadSchema.parse((event as { data: unknown }).data);
+    const aggregationUnit = createAggregationUnit();
 
     const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
     if (!accessToken) {
@@ -69,6 +74,7 @@ export const triggerLineDelivery = inngest.createFunction(
               body: JSON.stringify({
                 to,
                 messages: [{ type: "text", text: message }],
+                customAggregationUnits: [aggregationUnit],
               }),
             });
             if (!response.ok) {
@@ -99,7 +105,7 @@ export const triggerLineDelivery = inngest.createFunction(
             'admin',
             ${triggeredBy},
             'line_trigger_delivery_executed',
-            ${JSON.stringify({ message, sent, failed })}::jsonb,
+            ${JSON.stringify({ message, sent, failed, aggregationUnit })}::jsonb,
             ${officialAccountId},
             NOW()
           )

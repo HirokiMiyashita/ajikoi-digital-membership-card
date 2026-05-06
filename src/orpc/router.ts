@@ -227,6 +227,67 @@ type RevisitFrequencyRow = {
   avgVisitsIn30Days: number;
 };
 
+type LatestDeliveryRow = {
+  sentAt: Date;
+  message: string;
+  sent: number;
+  failed: number;
+  aggregationUnit: string | null;
+};
+
+type LatestDeliveryVisitRow = {
+  visits: number;
+};
+
+function formatJstYmd(date: Date) {
+  const jstOffsetMs = 9 * 60 * 60 * 1000;
+  const jst = new Date(date.getTime() + jstOffsetMs);
+  const y = jst.getUTCFullYear();
+  const m = String(jst.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(jst.getUTCDate()).padStart(2, "0");
+  return `${y}${m}${d}`;
+}
+
+async function getLineUniqueImpressionByAggregationUnit(
+  aggregationUnit: string,
+  sentAt: Date,
+): Promise<number | null> {
+  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
+  if (!accessToken) {
+    return null;
+  }
+
+  const from = formatJstYmd(sentAt);
+  const toDate = new Date();
+  const maxToDate = new Date(sentAt);
+  maxToDate.setDate(maxToDate.getDate() + 30);
+  const to = formatJstYmd(toDate <= maxToDate ? toDate : maxToDate);
+
+  const url = new URL("https://api.line.me/v2/bot/insight/message/event/aggregation");
+  url.searchParams.set("customAggregationUnit", aggregationUnit);
+  url.searchParams.set("from", from);
+  url.searchParams.set("to", to);
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const json = (await response.json()) as {
+      overview?: {
+        uniqueImpression?: number | null;
+      };
+    };
+    return json.overview?.uniqueImpression ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function getAdminReportMetrics(officialAccountId: string | null) {
   const officialAccountFilterUsers = officialAccountId
     ? Prisma.sql`AND u."officialAccountId" = ${officialAccountId}`
@@ -487,6 +548,39 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     FROM visits_30d v
   `;
 
+  const latestDeliveryRows = await prisma.$queryRaw<LatestDeliveryRow[]>`
+    SELECT
+      h."createdAt" AS "sentAt",
+      COALESCE(h."metadata"->>'message', '') AS "message",
+      COALESCE((h."metadata"->>'sent')::int, 0) AS "sent",
+      COALESCE((h."metadata"->>'failed')::int, 0) AS "failed",
+      (h."metadata"->>'aggregationUnit') AS "aggregationUnit"
+    FROM "user_history" h
+    WHERE h."action" = 'line_trigger_delivery_executed'
+      ${officialAccountId ? Prisma.sql`AND h."officialAccountId" = ${officialAccountId}` : Prisma.empty}
+    ORDER BY h."createdAt" DESC
+    LIMIT 1
+  `;
+
+  const latestDelivery = latestDeliveryRows[0];
+  let latestDeliveryVisits = 0;
+  let latestDeliveryOpened: number | null = null;
+  if (latestDelivery) {
+    const latestDeliveryVisitRows = await prisma.$queryRaw<LatestDeliveryVisitRow[]>`
+      SELECT COUNT(*)::int AS "visits"
+      FROM "user_checkins" c
+      WHERE c."checkedInAt" >= ${latestDelivery.sentAt}
+      ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
+    `;
+    latestDeliveryVisits = latestDeliveryVisitRows[0]?.visits ?? 0;
+    if (latestDelivery.aggregationUnit) {
+      latestDeliveryOpened = await getLineUniqueImpressionByAggregationUnit(
+        latestDelivery.aggregationUnit,
+        latestDelivery.sentAt,
+      );
+    }
+  }
+
   return {
     memberTrend,
     repeaterTrend,
@@ -512,6 +606,16 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
       usersCount: 0,
       avgVisitsIn30Days: 0,
     },
+    latestDelivery: latestDelivery
+      ? {
+          sentAt: latestDelivery.sentAt,
+          message: latestDelivery.message,
+          sent: latestDelivery.sent,
+          opened: latestDeliveryOpened,
+          visits: latestDeliveryVisits,
+          statusLabel: "確定",
+        }
+      : null,
   };
 }
 
@@ -945,6 +1049,12 @@ export const appRouter = {
             repeatVisits: row.repeatVisits,
             totalVisits: row.totalVisits,
           })),
+          latestDelivery: metrics.latestDelivery
+            ? {
+                ...metrics.latestDelivery,
+                sentAt: metrics.latestDelivery.sentAt.toISOString(),
+              }
+            : null,
         };
       }),
   },
