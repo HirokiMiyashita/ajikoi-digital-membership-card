@@ -11,6 +11,11 @@ type Profile = {
   pictureUrl?: string;
   statusMessage?: string;
 };
+type GachaPopupState = {
+  open: boolean;
+  won: boolean;
+  giftTitle: string | null;
+};
 
 const surveySteps = ["gender", "visitFrequency", "companionType", "birthDate"] as const;
 type SurveyForm = {
@@ -59,6 +64,11 @@ export default function Home() {
   const [isGachaJudging, setIsGachaJudging] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [gachaPopup, setGachaPopup] = useState<GachaPopupState>({
+    open: false,
+    won: false,
+    giftTitle: null,
+  });
   const [needsSurvey, setNeedsSurvey] = useState(false);
   const [surveyStep, setSurveyStep] = useState(0);
   const [isSubmittingSurvey, setIsSubmittingSurvey] = useState(false);
@@ -70,7 +80,6 @@ export default function Home() {
     birthDate: "",
   });
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
-  const afterCheckinLiffUrl = process.env.NEXT_PUBLIC_AFTER_CHECKIN_LIFF_URL;
 
   useEffect(() => {
     const initializeLiff = async () => {
@@ -173,6 +182,7 @@ export default function Home() {
     }
 
     setIsScanning(true);
+    setGachaPopup({ open: false, won: false, giftTitle: null });
     setScanMessage("QRコードを読み取っています...");
 
     try {
@@ -201,18 +211,15 @@ export default function Home() {
       setNextRankName(result.nextRankName);
       setPointsToNextRank(result.pointsToNextRank);
       setCheckedInToday(result.checkedInToday);
-      const gachaMessage = result.gacha?.executed
-        ? result.gacha.won
-          ? `ガチャ当選！「${result.gacha.giftTitle ?? "ギフト"}」を獲得しました。`
-          : "ガチャはハズレでした。"
-        : "";
-      setScanMessage(gachaMessage ? `+1ポイントを付与しました。${gachaMessage}` : "+1ポイントを付与しました。");
-
-      if (afterCheckinLiffUrl) {
-        liff.openWindow({
-          url: afterCheckinLiffUrl,
-          external: false,
+      if (result.gacha?.executed) {
+        setGachaPopup({
+          open: true,
+          won: result.gacha.won,
+          giftTitle: result.gacha.giftTitle ?? null,
         });
+        setScanMessage("+1ポイントを付与しました。ガチャ結果を確認してください。");
+      } else {
+        setScanMessage("+1ポイントを付与しました。");
       }
     } catch (error) {
       setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
@@ -220,6 +227,10 @@ export default function Home() {
       setIsGachaJudging(false);
       setIsScanning(false);
     }
+  };
+
+  const handleCloseGachaPopup = () => {
+    setGachaPopup((prev) => ({ ...prev, open: false }));
   };
 
   return (
@@ -344,6 +355,28 @@ export default function Home() {
             aria-hidden="true"
           />
           <p className="text-sm font-semibold text-[#0f172a]">判定中...</p>
+        </div>
+      ) : null}
+      {gachaPopup.open ? (
+        <div className="fixed inset-0 z-56 flex items-center justify-center bg-black/35 px-6">
+          <section className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+            <p className="text-sm font-semibold text-[#64748b]">来店ガチャ結果</p>
+            <p className={`mt-3 text-2xl font-bold ${gachaPopup.won ? "text-[#0f766e]" : "text-[#334155]"}`}>
+              {gachaPopup.won ? "あたり！" : "ハズレ"}
+            </p>
+            <p className="mt-3 text-sm text-[#334155]">
+              {gachaPopup.won
+                ? `「${gachaPopup.giftTitle ?? "ギフト"}」を獲得しました。`
+                : "また次回チャレンジしてください。"}
+            </p>
+            <button
+              type="button"
+              onClick={handleCloseGachaPopup}
+              className="mt-6 w-full rounded-lg bg-[#0f766e] px-4 py-3 text-sm font-bold text-white"
+            >
+              閉じる
+            </button>
+          </section>
         </div>
       ) : null}
       {needsSurvey && profile ? (
