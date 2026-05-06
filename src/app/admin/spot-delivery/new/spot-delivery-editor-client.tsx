@@ -13,6 +13,8 @@ type GiftOption = {
   title: string;
   imageUrl: string;
   usageGuide: string;
+  previewImageUrl: string;
+  lineImageUrl: string | null;
 };
 
 type Props = {
@@ -162,6 +164,9 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
       });
     }
     if (showGiftElement && selectedGift) {
+      if (!selectedGift.lineImageUrl) {
+        throw new Error("選択したギフト画像はLINEから参照できません。ギフト画像を再保存してください。");
+      }
       const buttonUrl =
         typeof window !== "undefined" ? `${window.location.origin}/benefits` : "https://example.com/benefits";
       lineMessages.push({
@@ -171,7 +176,7 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
           type: "bubble",
           hero: {
             type: "image",
-            url: selectedGift.imageUrl,
+            url: selectedGift.lineImageUrl,
             size: "full",
             aspectRatio: "4:3",
             aspectMode: "cover",
@@ -257,8 +262,8 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
       setSelectedImageFile(null);
       setUploadedImageUrl(null);
       setSelectedUserIds([]);
-    } catch {
-      showToast("通信エラーが発生しました。", true);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "通信エラーが発生しました。", true);
     } finally {
       setIsSubmitting(false);
     }
@@ -384,7 +389,7 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
                     <div className="flex min-w-0 items-center gap-3">
                       <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
                         {selectedGift ? (
-                          <img src={selectedGift.imageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
+                          <img src={selectedGift.previewImageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">🎁</div>
                         )}
@@ -521,7 +526,7 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
                 <div className="mb-3 w-[92%] overflow-hidden rounded-2xl bg-white shadow-sm">
                   <div className="h-52 w-full overflow-hidden bg-[#d1fae5]">
                     {selectedGift ? (
-                      <img src={selectedGift.imageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
+                        <img src={selectedGift.previewImageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
                     ) : (
                       <div className="flex h-full items-center justify-center text-sm text-[#94a3b8]">ギフト画像未設定</div>
                     )}
@@ -592,7 +597,7 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
                     }`}
                   >
                     <div className="h-12 w-12 overflow-hidden rounded border border-[#dbe2ea] bg-white">
-                      <img src={gift.imageUrl} alt={gift.title} className="h-full w-full object-cover" />
+                      <img src={gift.previewImageUrl} alt={gift.title} className="h-full w-full object-cover" />
                     </div>
                     <p className="line-clamp-2 text-sm font-semibold text-[#0f172a]">{gift.title}</p>
                   </button>
