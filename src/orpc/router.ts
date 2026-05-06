@@ -269,11 +269,14 @@ async function getLineUniqueImpressionByAggregationUnit(
   url.searchParams.set("to", to);
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1200);
     const response = await fetch(url.toString(), {
       headers: {
         Authorization: `Bearer ${accessToken}`,
       },
-    });
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeout));
     if (!response.ok) {
       return null;
     }
@@ -299,7 +302,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}`
     : Prisma.empty;
 
-  const memberTrend = await prisma.$queryRaw<MemberTrendRow[]>`
+  const memberTrendPromise = prisma.$queryRaw<MemberTrendRow[]>`
     WITH bounds AS (
       SELECT COALESCE(MIN(u."createdAt")::date, CURRENT_DATE) AS start_day
       FROM "users" u
@@ -325,7 +328,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ORDER BY d.day ASC
   `;
 
-  const visitTrend = await prisma.$queryRaw<VisitTrendRow[]>`
+  const visitTrendPromise = prisma.$queryRaw<VisitTrendRow[]>`
     WITH bounds AS (
       SELECT COALESCE(MIN(c."checkedInAt")::date, CURRENT_DATE) AS start_day
       FROM "user_checkins" c
@@ -353,7 +356,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ORDER BY d.day ASC
   `;
 
-  const repeaterTrend = await prisma.$queryRaw<RepeaterTrendRow[]>`
+  const repeaterTrendPromise = prisma.$queryRaw<RepeaterTrendRow[]>`
     WITH bounds AS (
       SELECT COALESCE(MIN(u."createdAt")::date, CURRENT_DATE) AS start_day
       FROM "users" u
@@ -388,7 +391,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ORDER BY d.day ASC
   `;
 
-  const repeaterSummaryRows = await prisma.$queryRaw<RepeaterSummary[]>`
+  const repeaterSummaryRowsPromise = prisma.$queryRaw<RepeaterSummary[]>`
     SELECT
       COUNT(u."userId")::int AS "members",
       COALESCE(
@@ -428,7 +431,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ${officialAccountFilterUsersNoAlias}
   `;
 
-  const visitCountDistributionRows = await prisma.$queryRaw<VisitCountDistributionRow[]>`
+  const visitCountDistributionRowsPromise = prisma.$queryRaw<VisitCountDistributionRow[]>`
     WITH visits_per_user AS (
       SELECT
         u."userId",
@@ -455,7 +458,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ORDER BY t."sortOrder" ASC
   `;
 
-  const ageDistributionRows = await prisma.$queryRaw<AgeDistributionRow[]>`
+  const ageDistributionRowsPromise = prisma.$queryRaw<AgeDistributionRow[]>`
     WITH surveyed AS (
       SELECT
         CASE
@@ -490,7 +493,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ORDER BY t."sortOrder" ASC
   `;
 
-  const genderDistributionRows = await prisma.$queryRaw<GenderDistributionRow[]>`
+  const genderDistributionRowsPromise = prisma.$queryRaw<GenderDistributionRow[]>`
     WITH surveyed AS (
       SELECT
         CASE
@@ -513,7 +516,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ORDER BY t."sortOrder" ASC
   `;
 
-  const revisitFrequencyRows = await prisma.$queryRaw<RevisitFrequencyRow[]>`
+  const revisitFrequencyRowsPromise = prisma.$queryRaw<RevisitFrequencyRow[]>`
     WITH first_checkins AS (
       SELECT c."userId", MIN(c."checkedInAt") AS first_at
       FROM "user_checkins" c
@@ -548,7 +551,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     FROM visits_30d v
   `;
 
-  const latestDeliveryRows = await prisma.$queryRaw<LatestDeliveryRow[]>`
+  const latestDeliveryRowsPromise = prisma.$queryRaw<LatestDeliveryRow[]>`
     SELECT
       h."createdAt" AS "sentAt",
       COALESCE(h."metadata"->>'message', '') AS "message",
@@ -561,6 +564,28 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ORDER BY h."createdAt" DESC
     LIMIT 1
   `;
+
+  const [
+    memberTrend,
+    visitTrend,
+    repeaterTrend,
+    repeaterSummaryRows,
+    visitCountDistributionRows,
+    ageDistributionRows,
+    genderDistributionRows,
+    revisitFrequencyRows,
+    latestDeliveryRows,
+  ] = await Promise.all([
+    memberTrendPromise,
+    visitTrendPromise,
+    repeaterTrendPromise,
+    repeaterSummaryRowsPromise,
+    visitCountDistributionRowsPromise,
+    ageDistributionRowsPromise,
+    genderDistributionRowsPromise,
+    revisitFrequencyRowsPromise,
+    latestDeliveryRowsPromise,
+  ]);
 
   const latestDelivery = latestDeliveryRows[0];
   let latestDeliveryVisits = 0;
