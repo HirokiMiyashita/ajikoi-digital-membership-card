@@ -2,7 +2,6 @@ import { os } from "@orpc/server";
 import { GiftExpiryType, Prisma } from "@prisma/client";
 import { z } from "zod";
 
-import { adminAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
 const OFFICIAL_ACCOUNT_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -288,6 +287,14 @@ type LatestDeliveryRow = {
 
 type LatestDeliveryVisitRow = {
   visits: number;
+};
+
+type UpsertedLiffUserRow = {
+  userId: string;
+  points: number;
+  nextRank: string;
+  lastCheckInAt: Date | null;
+  surveyId: string | null;
 };
 
 function formatJstYmd(date: Date) {
@@ -727,33 +734,88 @@ export const appRouter = {
         }),
       )
       .handler(async ({ input }) => {
+        const startedAt = Date.now();
         const officialAccountId = await resolveOfficialAccountId();
-        const user = await prisma.user.upsert({
-          where: {
-            userId: input.userId,
-          },
-          create: {
-            userId: input.userId,
-            displayName: input.displayName,
-            officialAccountId: officialAccountId ?? undefined,
-            officialLinkedAt: officialAccountId ? new Date() : undefined,
-          },
-          update: {
-            displayName: input.displayName,
-            ...(officialAccountId
-              ? {
-                  officialAccountId,
-                  officialLinkedAt: new Date(),
-                }
-              : {}),
-          },
-        });
+        const officialResolvedAt = Date.now();
+        const upsertRows = await prisma.$queryRaw<UpsertedLiffUserRow[]>`
+          WITH upserted AS (
+            INSERT INTO "users" (
+              "userId",
+              "displayName",
+              "officialAccountId",
+              "officialLinkedAt",
+              "createdAt",
+              "updatedAt"
+            )
+            VALUES (
+              ${input.userId},
+              ${input.displayName},
+              ${officialAccountId},
+              ${officialAccountId ? new Date() : null},
+              NOW(),
+              NOW()
+            )
+            ON CONFLICT ("userId") DO UPDATE
+            SET
+              "displayName" = EXCLUDED."displayName",
+              "officialAccountId" = COALESCE("users"."officialAccountId", EXCLUDED."officialAccountId"),
+              "officialLinkedAt" = CASE
+                WHEN "users"."officialAccountId" IS NULL AND EXCLUDED."officialAccountId" IS NOT NULL
+                  THEN NOW()
+                ELSE "users"."officialLinkedAt"
+              END,
+              "updatedAt" = NOW()
+            WHERE
+              "users"."displayName" IS DISTINCT FROM EXCLUDED."displayName"
+              OR ("users"."officialAccountId" IS NULL AND EXCLUDED."officialAccountId" IS NOT NULL)
+            RETURNING
+              "userId",
+              "points",
+              "nextRank",
+              "lastCheckInAt",
+              "surveyId"
+          )
+          SELECT
+            u."userId",
+            u."points",
+            u."nextRank",
+            u."lastCheckInAt",
+            u."surveyId"
+          FROM upserted u
+          UNION ALL
+          SELECT
+            u2."userId",
+            u2."points",
+            u2."nextRank",
+            u2."lastCheckInAt",
+            u2."surveyId"
+          FROM "users" u2
+          WHERE u2."userId" = ${input.userId}
+            AND NOT EXISTS (SELECT 1 FROM upserted)
+          LIMIT 1
+        `;
+        const user = upsertRows[0];
+        if (!user) {
+          throw new Error("ユーザーの同期に失敗しました。");
+        }
+        const upsertedAt = Date.now();
 
         const [currentRank, nextRank] = await Promise.all([
           resolveRankByPoints(user.points),
           resolveNextRankByPoints(user.points),
         ]);
+        const rankedAt = Date.now();
         const checkedInToday = isCheckedInToday(user.lastCheckInAt);
+
+        const elapsedMs = Date.now() - startedAt;
+        if (elapsedMs >= 500) {
+          console.info("[user.upsertFromLiff-ms]", {
+            total: elapsedMs,
+            resolveOfficialAccountId: officialResolvedAt - startedAt,
+            upsertUser: upsertedAt - officialResolvedAt,
+            resolveRanks: rankedAt - upsertedAt,
+          });
+        }
 
         return {
           ok: true,
@@ -1043,6 +1105,7 @@ export const appRouter = {
           throw new Error("リクエスト情報が見つかりません。");
         }
 
+        const { adminAuth } = await import("@/lib/admin-auth");
         const session = await adminAuth.api.getSession({
           headers: request.headers,
         });

@@ -121,6 +121,7 @@ export default function Home() {
     let cancelled = false;
 
     const initializeLiff = async () => {
+      const startedAt = performance.now();
       setIsProfileLoading(true);
       if (!liffId) {
         if (!cancelled) {
@@ -130,8 +131,11 @@ export default function Home() {
       }
 
       try {
+        const importStartedAt = performance.now();
         const { default: liff } = await import("@line/liff");
+        const importedAt = performance.now();
         await liff.init({ liffId });
+        const initializedAt = performance.now();
 
         if (!liff.isLoggedIn()) {
           liff.login();
@@ -139,10 +143,13 @@ export default function Home() {
         }
 
         const userProfile = await liff.getProfile();
+        const ownedGiftsPromise = fetchOwnedGifts(userProfile.userId);
+        const profileFetchedAt = performance.now();
         const syncResult = await rpcClient.user.upsertFromLiff({
           userId: userProfile.userId,
           displayName: userProfile.displayName,
         });
+        const syncedAt = performance.now();
         if (cancelled) {
           return;
         }
@@ -157,9 +164,16 @@ export default function Home() {
         if (syncResult.checkedInToday) {
           setScanMessage("本日の入店ポイントは付与済みです。");
         }
-        // ギフト取得はバックグラウンドで行い、初期表示をブロックしない。
-        void fetchOwnedGifts(userProfile.userId);
+        // ギフト取得は upsertFromLiff と並列で先に開始しておく。
+        void ownedGiftsPromise;
         setIsProfileLoading(false);
+        console.info("[liff-init-ms]", {
+          importLiff: Math.round(importedAt - importStartedAt),
+          liffInit: Math.round(initializedAt - importedAt),
+          getProfile: Math.round(profileFetchedAt - initializedAt),
+          upsertFromLiff: Math.round(syncedAt - profileFetchedAt),
+          totalToReady: Math.round(syncedAt - startedAt),
+        });
       } catch (error) {
         console.error(error);
         if (!cancelled) {
