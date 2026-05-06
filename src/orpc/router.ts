@@ -7,6 +7,14 @@ import { prisma } from "@/lib/prisma";
 
 const OFFICIAL_ACCOUNT_CACHE_TTL_MS = 5 * 60 * 1000;
 let officialAccountCache: { id: string | null; expiresAt: number } | null = null;
+const RANK_CACHE_TTL_MS = 5 * 60 * 1000;
+type CachedRank = {
+  id: string;
+  name: string;
+  minPoints: number;
+  maxPoints: number;
+};
+let rankCache: { ranks: CachedRank[]; expiresAt: number } | null = null;
 
 function matchesVisitQrToken(qrValue: string, expectedToken: string) {
   if (qrValue === expectedToken) {
@@ -55,16 +63,18 @@ async function resolveOfficialAccountId() {
     return null;
   }
 
-  await prisma.$executeRaw`
-    INSERT INTO "official_accounts" ("id", "lineBasicId", "name", "updatedAt")
-    VALUES (md5(random()::text || clock_timestamp()::text), ${lineBasicId}, ${lineBasicId}, NOW())
-    ON CONFLICT ("lineBasicId")
-    DO UPDATE SET "updatedAt" = NOW()
-  `;
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT "id"
-    FROM "official_accounts"
-    WHERE "lineBasicId" = ${lineBasicId}
+    WITH inserted AS (
+      INSERT INTO "official_accounts" ("id", "lineBasicId", "name", "updatedAt")
+      VALUES (md5(random()::text || clock_timestamp()::text), ${lineBasicId}, ${lineBasicId}, NOW())
+      ON CONFLICT ("lineBasicId") DO NOTHING
+      RETURNING "id"
+    )
+    SELECT "id" FROM inserted
+    UNION ALL
+    SELECT oa."id"
+    FROM "official_accounts" oa
+    WHERE oa."lineBasicId" = ${lineBasicId}
     LIMIT 1
   `;
 
@@ -76,26 +86,50 @@ async function resolveOfficialAccountId() {
   return resolvedId;
 }
 
-async function resolveRankByPoints(points: number) {
-  const rank = await prisma.rank.findFirst({
-    where: {
-      minPoints: {
-        lte: points,
-      },
-      maxPoints: {
-        gte: points,
-      },
+async function getCachedRanks() {
+  const now = Date.now();
+  if (rankCache && rankCache.expiresAt > now) {
+    return rankCache.ranks;
+  }
+
+  const rows = await prisma.rank.findMany({
+    select: {
+      id: true,
+      name: true,
+      minPoints: true,
+      maxPoints: true,
     },
     orderBy: {
       minPoints: "asc",
     },
   });
+  const ranks = rows.map((row) => ({
+    ...row,
+    minPoints: Number(row.minPoints),
+    maxPoints: Number(row.maxPoints),
+  }));
+  rankCache = {
+    ranks,
+    expiresAt: now + RANK_CACHE_TTL_MS,
+  };
+  return ranks;
+}
+
+async function resolveRankByPoints(points: number) {
+  const ranks = await getCachedRanks();
+  const rank = ranks.find((candidate) => points >= candidate.minPoints && points <= candidate.maxPoints);
 
   if (!rank) {
     throw new Error(`No rank found for points: ${points}`);
   }
 
   return rank;
+}
+
+async function resolveNextRankByPoints(points: number) {
+  const ranks = await getCachedRanks();
+  const nextRank = ranks.find((candidate) => candidate.minPoints > points);
+  return nextRank ?? null;
 }
 
 function addDays(base: Date, days: number) {
@@ -694,7 +728,7 @@ export const appRouter = {
       )
       .handler(async ({ input }) => {
         const officialAccountId = await resolveOfficialAccountId();
-        const baseUser = await prisma.user.upsert({
+        const user = await prisma.user.upsert({
           where: {
             userId: input.userId,
           },
@@ -715,37 +749,17 @@ export const appRouter = {
           },
         });
 
-        const currentRank = await resolveRankByPoints(baseUser.points);
-        const nextRankId = currentRank.id;
-        const user =
-          baseUser.nextRank === nextRankId
-            ? baseUser
-            : await prisma.user.update({
-                where: {
-                  userId: baseUser.userId,
-                },
-                data: {
-                  nextRank: nextRankId,
-                },
-              });
-
-        const nextRank = await prisma.rank.findFirst({
-          where: {
-            minPoints: {
-              gt: user.points,
-            },
-          },
-          orderBy: {
-            minPoints: "asc",
-          },
-        });
+        const [currentRank, nextRank] = await Promise.all([
+          resolveRankByPoints(user.points),
+          resolveNextRankByPoints(user.points),
+        ]);
         const checkedInToday = isCheckedInToday(user.lastCheckInAt);
 
         return {
           ok: true,
           provider: "prisma",
           points: user.points,
-          nextRank: user.nextRank,
+          nextRank: currentRank.id,
           currentRankName: currentRank.name,
           nextRankName: nextRank?.name ?? null,
           pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - user.points, 0) : 0,
@@ -935,16 +949,7 @@ export const appRouter = {
           });
         }
 
-        const nextRank = await prisma.rank.findFirst({
-          where: {
-            minPoints: {
-              gt: updatedUser.points,
-            },
-          },
-          orderBy: {
-            minPoints: "asc",
-          },
-        });
+        const nextRank = await resolveNextRankByPoints(updatedUser.points);
 
         const checkInCountRows = await prisma.$queryRaw<Array<{ count: number }>>`
           SELECT COUNT(*)::int AS "count"
