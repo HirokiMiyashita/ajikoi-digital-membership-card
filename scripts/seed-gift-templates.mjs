@@ -33,7 +33,7 @@ async function main() {
     const svg = createSvg(item);
 
     const blob = await put(`gift-templates/template-${sortOrder}.svg`, Buffer.from(svg), {
-      access: "private",
+      access: "public",
       addRandomSuffix: false,
       contentType: "image/svg+xml",
     });
@@ -42,12 +42,12 @@ async function main() {
       where: { sortOrder },
       update: {
         name: item.name,
-        imageUrl: blob.pathname,
+        imageUrl: blob.url,
         isActive: true,
       },
       create: {
         name: item.name,
-        imageUrl: blob.pathname,
+        imageUrl: blob.url,
         sortOrder,
         isActive: true,
       },

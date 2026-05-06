@@ -1,13 +1,9 @@
-name: Prisma Migrate Deploy
+name: Prisma Deploy And Seed
 
 on:
   push:
     branches:
       - main
-    paths:
-      - "prisma/migrations/**"
-      - "prisma/schema.prisma"
-      - ".github/workflows/prisma-migrate-deploy.yml"
   workflow_dispatch:
 
 jobs:
@@ -32,3 +28,10 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DIRECT_URL: ${{ secrets.DIRECT_URL }}
         run: npx prisma migrate deploy
+
+      - name: Seed gift templates
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+        run: node scripts/seed-gift-templates.mjs

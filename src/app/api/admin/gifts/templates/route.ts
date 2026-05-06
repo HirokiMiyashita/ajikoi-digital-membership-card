@@ -1,6 +1,13 @@
 import { adminAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
+function toDisplayUrl(imageUrl: string) {
+  if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+    return imageUrl;
+  }
+  return `/api/admin/blob?pathname=${encodeURIComponent(imageUrl)}`;
+}
+
 export async function GET(request: Request) {
   const session = await adminAuth.api.getSession({
     headers: request.headers,
@@ -40,7 +47,7 @@ export async function GET(request: Request) {
     templates: templates.map((template) => ({
       ...template,
       imagePath: template.imageUrl,
-      displayUrl: `/api/admin/blob?pathname=${encodeURIComponent(template.imageUrl)}`,
+      displayUrl: toDisplayUrl(template.imageUrl),
     })),
   });
 }

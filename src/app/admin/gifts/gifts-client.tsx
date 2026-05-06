@@ -27,6 +27,14 @@ type GiftsClientProps = {
   initialValue?: GiftEditorInitialValue;
 };
 
+function resolveImagePreviewUrl(imagePath: string) {
+  if (!imagePath) return "";
+  if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+    return imagePath;
+  }
+  return `/api/admin/blob?pathname=${encodeURIComponent(imagePath)}`;
+}
+
 export default function GiftsClient({ mode, giftId, initialValue }: GiftsClientProps) {
   const router = useRouter();
   const [title, setTitle] = useState(initialValue?.title ?? "");
@@ -35,11 +43,7 @@ export default function GiftsClient({ mode, giftId, initialValue }: GiftsClientP
   const [expiryDays, setExpiryDays] = useState(String(initialValue?.expiryDays ?? 30));
   const [expiryAt, setExpiryAt] = useState(initialValue?.expiryAt ? initialValue.expiryAt.slice(0, 10) : "");
   const [imagePath, setImagePath] = useState(initialValue?.imagePath ?? "");
-  const [imagePreviewUrl, setImagePreviewUrl] = useState(
-    initialValue?.imagePath
-      ? `/api/admin/blob?pathname=${encodeURIComponent(initialValue.imagePath)}`
-      : "",
-  );
+  const [imagePreviewUrl, setImagePreviewUrl] = useState(resolveImagePreviewUrl(initialValue?.imagePath ?? ""));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [templates, setTemplates] = useState<TemplateImage[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);

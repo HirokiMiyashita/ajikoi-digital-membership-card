@@ -58,13 +58,13 @@ export async function POST(request: Request) {
 
   try {
     const blob = await put(`gifts/${Date.now()}-${file.name}`, file, {
-      access: "private",
+      access: "public",
       addRandomSuffix: true,
     });
     return Response.json({
       ok: true,
-      imagePath: blob.pathname,
-      previewUrl: `/api/admin/blob?pathname=${encodeURIComponent(blob.pathname)}`,
+      imagePath: blob.url,
+      previewUrl: blob.url,
     });
   } catch {
     return Response.json(
