@@ -4,6 +4,7 @@ import Link from "next/link";
 const menuItems = [
   { label: "ギフト管理", href: "/admin/gifts" },
   { label: "来店ガチャ設定", href: "/admin/visit-gacha" },
+  { label: "会員設定", href: "/admin/member-settings" },
 ];
 
 export default async function AdminMenuPage() {

@@ -190,6 +190,10 @@ export default function Home() {
         if (syncResult.checkedInToday) {
           setScanMessage("本日の入店ポイントは付与済みです。");
         }
+        if (syncResult.signupGiftTitle) {
+          setToastMessage(`会員登録特典「${syncResult.signupGiftTitle}」を獲得しました。`);
+          setTimeout(() => setToastMessage(null), 2600);
+        }
         // ギフト取得は upsertFromLiff と並列で先に開始しておく。
         void ownedGiftsPromise;
         setIsProfileLoading(false);
@@ -336,15 +340,19 @@ export default function Home() {
       setNextRankName(result.nextRankName);
       setPointsToNextRank(result.pointsToNextRank);
       setCheckedInToday(result.checkedInToday);
+      const giftSuffix =
+        result.grantedGiftTitles.length > 0
+          ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
+          : "";
       if (result.gacha?.executed) {
         setGachaPopup({
           open: true,
           won: result.gacha.won,
           giftTitle: result.gacha.giftTitle ?? null,
         });
-        setScanMessage("+1ポイントを付与しました。ガチャ結果を確認してください。");
+        setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャ結果を確認してください。`);
       } else {
-        setScanMessage("+1ポイントを付与しました。");
+        setScanMessage(`+1ポイントを付与しました。${giftSuffix}`.trim());
       }
       await fetchOwnedGifts(profile.userId);
     } catch (error) {

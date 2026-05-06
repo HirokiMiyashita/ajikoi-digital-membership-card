@@ -65,6 +65,9 @@ model Gift {
   updatedAt     DateTime       @updatedAt
   userGifts     UserGift[]
   visitGachaSettings VisitGachaSetting[]
+  signupBenefitSettings MemberBenefitSetting[] @relation("SignupBenefitGift")
+  topRankLoopBenefitSettings MemberBenefitSetting[] @relation("TopRankLoopBenefitGift")
+  rankBenefitGiftSettings RankBenefitGiftSetting[]
 
   @@map("gifts")
 }
@@ -145,6 +148,7 @@ model Rank {
   maxPoints Int
   users     User[]
   visitGachaRankProbabilities VisitGachaRankProbability[]
+  rankBenefitGiftSettings RankBenefitGiftSetting[]
 
   @@map("ranks")
 }
@@ -170,11 +174,48 @@ model OfficialAccount {
   checkIns      UserCheckIn[]
   visitGachaSettings VisitGachaSetting[]
   staffOperationPermissions StaffStoreOperationPermission[]
+  memberBenefitSettings MemberBenefitSetting[]
   storeStatus   StoreStatus?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   @@map("official_accounts")
+}
+
+model MemberBenefitSetting {
+  id                 String            @id @default(cuid())
+  scopeKey           String            @unique
+  officialAccountId  String?
+  signupGiftId       String?
+  topRankLoopGiftId  String?
+  officialAccount    OfficialAccount?  @relation(fields: [officialAccountId], references: [id])
+  signupGift         Gift?             @relation("SignupBenefitGift", fields: [signupGiftId], references: [id], onDelete: SetNull)
+  topRankLoopGift    Gift?             @relation("TopRankLoopBenefitGift", fields: [topRankLoopGiftId], references: [id], onDelete: SetNull)
+  rankBenefitGiftSettings RankBenefitGiftSetting[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([officialAccountId])
+  @@index([signupGiftId])
+  @@index([topRankLoopGiftId])
+  @@map("member_benefit_settings")
+}
+
+model RankBenefitGiftSetting {
+  id         String              @id @default(cuid())
+  settingId  String
+  rankId     String
+  giftId     String
+  setting    MemberBenefitSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
+  rank       Rank                @relation(fields: [rankId], references: [id], onDelete: Cascade)
+  gift       Gift                @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@unique([settingId, rankId])
+  @@index([rankId])
+  @@index([giftId])
+  @@map("rank_benefit_gift_settings")
 }
 
 model StaffStoreOperationPermission {

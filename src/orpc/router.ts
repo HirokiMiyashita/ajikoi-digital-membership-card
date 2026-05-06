@@ -153,6 +153,117 @@ function resolveGiftExpiryAt(gift: {
   return gift.expiryAt ?? null;
 }
 
+type MemberBenefitSettingWithRanks = {
+  signupGiftId: string | null;
+  topRankLoopGiftId: string | null;
+  rankBenefitGiftSettings: Array<{
+    rankId: string;
+    giftId: string;
+  }>;
+};
+
+async function getMemberBenefitSetting(officialAccountId: string | null) {
+  const scopeKey = officialAccountId ?? "global";
+  const setting = await prisma.memberBenefitSetting.findUnique({
+    where: { scopeKey },
+    select: {
+      signupGiftId: true,
+      topRankLoopGiftId: true,
+      rankBenefitGiftSettings: {
+        select: {
+          rankId: true,
+          giftId: true,
+        },
+      },
+    },
+  });
+  return setting as MemberBenefitSettingWithRanks | null;
+}
+
+async function issueGiftFromSetting(params: {
+  userId: string;
+  giftId: string;
+  officialAccountId: string | null;
+  action: string;
+  dedupeKey: string;
+  dedupeValue: string;
+  extraMetadata?: Record<string, unknown>;
+}) {
+  const gift = await prisma.gift.findUnique({
+    where: { id: params.giftId },
+    select: {
+      id: true,
+      title: true,
+      expiryType: true,
+      expiryDays: true,
+      expiryAt: true,
+    },
+  });
+  if (!gift) {
+    return null;
+  }
+
+  const expiresAt = resolveGiftExpiryAt(gift);
+  if (!expiresAt) {
+    return null;
+  }
+
+  const createdRows = await prisma.$queryRaw<Array<{ id: string }>>`
+    WITH inserted AS (
+      INSERT INTO "user_gifts"
+        ("id", "userId", "giftId", "isUsed", "issuedAt", "expiresAt", "createdAt", "updatedAt")
+      SELECT
+        md5(random()::text || clock_timestamp()::text),
+        ${params.userId},
+        ${gift.id},
+        false,
+        NOW(),
+        ${expiresAt},
+        NOW(),
+        NOW()
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM "user_history" h
+        WHERE h."targetUserId" = ${params.userId}
+          AND h."action" = ${params.action}
+          AND h."metadata"->>${params.dedupeKey} = ${params.dedupeValue}
+      )
+      RETURNING "id"
+    )
+    SELECT "id"
+    FROM inserted
+    LIMIT 1
+  `;
+  const created = createdRows[0] ?? null;
+  if (!created) {
+    return null;
+  }
+
+  await prisma.$executeRaw`
+    INSERT INTO "user_history"
+      ("id", "targetUserId", "actorType", "actorId", "action", "metadata", "officialAccountId", "createdAt")
+    VALUES
+      (
+        md5(random()::text || clock_timestamp()::text),
+        ${params.userId},
+        'system',
+        'member_benefit',
+        ${params.action},
+        ${JSON.stringify({
+          giftId: gift.id,
+          giftTitle: gift.title,
+          userGiftId: created.id,
+          [params.dedupeKey]: params.dedupeValue,
+          ...(params.extraMetadata ?? {}),
+        })}::jsonb,
+        ${params.officialAccountId},
+        NOW()
+      )
+  `;
+
+  return gift.title;
+}
+
 type VisitGachaResult = {
   executed: boolean;
   won: boolean;
@@ -769,6 +880,10 @@ export const appRouter = {
         const startedAt = Date.now();
         const officialAccountId = await resolveOfficialAccountId();
         const officialResolvedAt = Date.now();
+        const existingUser = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: { userId: true },
+        });
         const upsertRows = await prisma.$queryRaw<UpsertedLiffUserRow[]>`
           WITH upserted AS (
             INSERT INTO "users" (
@@ -841,6 +956,20 @@ export const appRouter = {
         ]);
         const rankedAt = Date.now();
         const checkedInToday = isCheckedInToday(user.lastCheckInAt);
+        let signupGiftTitle: string | null = null;
+        if (!existingUser) {
+          const benefitSetting = await getMemberBenefitSetting(officialAccountId);
+          if (benefitSetting?.signupGiftId) {
+            signupGiftTitle = await issueGiftFromSetting({
+              userId: user.userId,
+              giftId: benefitSetting.signupGiftId,
+              officialAccountId,
+              action: "member_signup_gift_granted",
+              dedupeKey: "eventKey",
+              dedupeValue: "signup",
+            });
+          }
+        }
 
         const elapsedMs = Date.now() - startedAt;
         if (elapsedMs >= 500) {
@@ -863,6 +992,7 @@ export const appRouter = {
           checkedInToday,
           hasSurvey: Boolean(user.surveyId),
           role: user.role,
+          signupGiftTitle,
         };
       }),
     getStaffStoreStatus: os
@@ -1336,6 +1466,7 @@ export const appRouter = {
           WHERE "userId" = ${updatedUser.userId}
         `;
         const checkInCount = checkInCountRows[0]?.count ?? 0;
+        const nextCheckInCount = checkInCount + 1;
         const isFirstVisit = checkInCount === 0;
         const userOfficialRows = await prisma.$queryRaw<Array<{ officialAccountId: string | null }>>`
           SELECT "officialAccountId"
@@ -1380,6 +1511,55 @@ export const appRouter = {
             )
         `;
 
+        const grantedGiftTitles: string[] = [];
+        const benefitSetting = await getMemberBenefitSetting(officialAccountId);
+        if (benefitSetting) {
+          const rankBenefitGiftId =
+            benefitSetting.rankBenefitGiftSettings.find((row) => row.rankId === currentRank.id)?.giftId ?? null;
+          if (rankBenefitGiftId && updatedUser.nextRank !== currentRank.id) {
+            const rankGiftTitle = await issueGiftFromSetting({
+              userId: updatedUser.userId,
+              giftId: rankBenefitGiftId,
+              officialAccountId,
+              action: "member_rank_gift_granted",
+              dedupeKey: "rankId",
+              dedupeValue: currentRank.id,
+              extraMetadata: {
+                rankName: currentRank.name,
+              },
+            });
+            if (rankGiftTitle) {
+              grantedGiftTitles.push(rankGiftTitle);
+            }
+          }
+
+          const cachedRanks = await getCachedRanks();
+          const highestRank = cachedRanks[cachedRanks.length - 1];
+          const shouldIssueTopLoopGift =
+            highestRank &&
+            currentRank.id === highestRank.id &&
+            nextCheckInCount > 0 &&
+            nextCheckInCount % 10 === 0;
+          if (shouldIssueTopLoopGift && benefitSetting.topRankLoopGiftId) {
+            const topLoopGiftTitle = await issueGiftFromSetting({
+              userId: updatedUser.userId,
+              giftId: benefitSetting.topRankLoopGiftId,
+              officialAccountId,
+              action: "member_top_rank_loop_gift_granted",
+              dedupeKey: "loopCount",
+              dedupeValue: String(nextCheckInCount / 10),
+              extraMetadata: {
+                checkInCount: nextCheckInCount,
+                rankId: currentRank.id,
+                rankName: currentRank.name,
+              },
+            });
+            if (topLoopGiftTitle) {
+              grantedGiftTitles.push(topLoopGiftTitle);
+            }
+          }
+        }
+
         const gacha = await runVisitGacha(updatedUser.userId, officialAccountId);
         if (gacha.executed) {
           await prisma.$executeRaw`
@@ -1409,6 +1589,7 @@ export const appRouter = {
           nextRankName: nextRank?.name ?? null,
           pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - updatedUser.points, 0) : 0,
           checkedInToday: true,
+          grantedGiftTitles,
           gacha,
         };
       }),
