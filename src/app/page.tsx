@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import { rpcClient } from "@/orpc/client";
@@ -104,6 +104,7 @@ export default function Home() {
     companionType: null,
     birthDate: "",
   });
+  const claimedGiftQueryRef = useRef<string | null>(null);
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
 
   const fetchOwnedGifts = async (userId: string) => {
@@ -188,6 +189,35 @@ export default function Home() {
       cancelled = true;
     };
   }, [liffId]);
+
+  useEffect(() => {
+    const claimGiftFromQuery = async () => {
+      if (!profile) return;
+      if (typeof window === "undefined") return;
+      const giftId = new URLSearchParams(window.location.search).get("giftId");
+      if (!giftId) return;
+      if (claimedGiftQueryRef.current === giftId) return;
+      claimedGiftQueryRef.current = giftId;
+
+      setScanMessage("giftを獲得中...");
+      try {
+        const result = await rpcClient.user.claimGiftFromLink({
+          userId: profile.userId,
+          giftId,
+        });
+        setToastMessage(`「${result.giftTitle}」を獲得しました。`);
+        setTimeout(() => setToastMessage(null), 2200);
+        await fetchOwnedGifts(profile.userId);
+        setScanMessage("ギフトを獲得しました。");
+        const url = new URL(window.location.href);
+        url.searchParams.delete("giftId");
+        window.history.replaceState({}, "", url.toString());
+      } catch (error) {
+        setScanMessage(error instanceof Error ? error.message : "ギフトの獲得に失敗しました。");
+      }
+    };
+    void claimGiftFromQuery();
+  }, [profile]);
 
   const progressToNextRank =
     nextRankName === null ? 100 : Math.min(((points + pointsToNextRank) === 0 ? 0 : (points / (points + pointsToNextRank)) * 100), 100);

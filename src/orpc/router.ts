@@ -137,6 +137,22 @@ function addDays(base: Date, days: number) {
   return date;
 }
 
+function resolveGiftExpiryAt(gift: {
+  expiryType: GiftExpiryType;
+  expiryDays: number | null;
+  expiryAt: Date | null;
+}) {
+  const now = new Date();
+  if (gift.expiryType === GiftExpiryType.DAYS_AFTER_ISSUE) {
+    const days = gift.expiryDays ?? 0;
+    if (days > 0) {
+      return addDays(now, days);
+    }
+    return null;
+  }
+  return gift.expiryAt ?? null;
+}
+
 type VisitGachaResult = {
   executed: boolean;
   won: boolean;
@@ -974,6 +990,82 @@ export const appRouter = {
         return {
           ok: true,
           userGiftId: input.userGiftId,
+        };
+      }),
+    claimGiftFromLink: os
+      .input(
+        z.object({
+          userId: z.string().min(1),
+          giftId: z.string().min(1),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const [user, gift] = await Promise.all([
+          prisma.user.findUnique({
+            where: { userId: input.userId },
+            select: {
+              userId: true,
+              officialAccountId: true,
+            },
+          }),
+          prisma.gift.findUnique({
+            where: { id: input.giftId },
+            select: {
+              id: true,
+              title: true,
+              expiryType: true,
+              expiryDays: true,
+              expiryAt: true,
+            },
+          }),
+        ]);
+        if (!user) {
+          throw new Error("ユーザーが見つかりません。");
+        }
+        if (!gift) {
+          throw new Error("ギフトが見つかりません。");
+        }
+
+        const expiresAt = resolveGiftExpiryAt(gift);
+        if (!expiresAt) {
+          throw new Error("このギフトは配布できません。期限設定を確認してください。");
+        }
+
+        const created = await prisma.userGift.create({
+          data: {
+            userId: user.userId,
+            giftId: gift.id,
+            expiresAt,
+          },
+          select: {
+            id: true,
+          },
+        });
+
+        await prisma.$executeRaw`
+          INSERT INTO "user_history"
+            ("id", "targetUserId", "actorType", "actorId", "action", "metadata", "officialAccountId", "createdAt")
+          VALUES
+            (
+              md5(random()::text || clock_timestamp()::text),
+              ${user.userId},
+              'system',
+              'spot_delivery',
+              'spot_delivery_gift_claimed',
+              ${JSON.stringify({
+                giftId: gift.id,
+                giftTitle: gift.title,
+                userGiftId: created.id,
+              })}::jsonb,
+              ${user.officialAccountId},
+              NOW()
+            )
+        `;
+
+        return {
+          ok: true,
+          giftTitle: gift.title,
+          userGiftId: created.id,
         };
       }),
     addVisitPoint: os

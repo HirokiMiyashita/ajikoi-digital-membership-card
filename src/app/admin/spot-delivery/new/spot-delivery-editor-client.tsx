@@ -168,7 +168,9 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
         throw new Error("選択したギフト画像はLINEから参照できません。ギフト画像を再保存してください。");
       }
       const buttonUrl =
-        typeof window !== "undefined" ? `${window.location.origin}/benefits` : "https://example.com/benefits";
+        typeof window !== "undefined"
+          ? `${window.location.origin}/?giftId=${encodeURIComponent(selectedGift.id)}`
+          : `https://example.com/?giftId=${encodeURIComponent(selectedGift.id)}`;
       lineMessages.push({
         type: "flex",
         altText: selectedGift.title,
