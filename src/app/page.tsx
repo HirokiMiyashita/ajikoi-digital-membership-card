@@ -118,10 +118,14 @@ export default function Home() {
   };
 
   useEffect(() => {
+    let cancelled = false;
+
     const initializeLiff = async () => {
       setIsProfileLoading(true);
       if (!liffId) {
-        setIsProfileLoading(false);
+        if (!cancelled) {
+          setIsProfileLoading(false);
+        }
         return;
       }
 
@@ -135,30 +139,40 @@ export default function Home() {
         }
 
         const userProfile = await liff.getProfile();
-        setProfile(userProfile);
         const syncResult = await rpcClient.user.upsertFromLiff({
           userId: userProfile.userId,
           displayName: userProfile.displayName,
         });
-        console.log(syncResult);
+        if (cancelled) {
+          return;
+        }
+
+        setProfile(userProfile);
         setPoints(syncResult.points);
         setCurrentRankName(syncResult.currentRankName);
         setNextRankName(syncResult.nextRankName);
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
         setNeedsSurvey(!syncResult.hasSurvey);
-        await fetchOwnedGifts(userProfile.userId);
         if (syncResult.checkedInToday) {
           setScanMessage("本日の入店ポイントは付与済みです。");
         }
+        // ギフト取得はバックグラウンドで行い、初期表示をブロックしない。
+        void fetchOwnedGifts(userProfile.userId);
         setIsProfileLoading(false);
       } catch (error) {
         console.error(error);
-        setIsProfileLoading(false);
+        if (!cancelled) {
+          setIsProfileLoading(false);
+        }
       }
     };
 
     void initializeLiff();
+
+    return () => {
+      cancelled = true;
+    };
   }, [liffId]);
 
   const progressToNextRank =

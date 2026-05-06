@@ -5,6 +5,9 @@ import { z } from "zod";
 import { adminAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
+const OFFICIAL_ACCOUNT_CACHE_TTL_MS = 5 * 60 * 1000;
+let officialAccountCache: { id: string | null; expiresAt: number } | null = null;
+
 function matchesVisitQrToken(qrValue: string, expectedToken: string) {
   if (qrValue === expectedToken) {
     return true;
@@ -38,8 +41,17 @@ function isCheckedInToday(lastCheckInAt: Date | null) {
 }
 
 async function resolveOfficialAccountId() {
+  const now = Date.now();
+  if (officialAccountCache && officialAccountCache.expiresAt > now) {
+    return officialAccountCache.id;
+  }
+
   const lineBasicId = process.env.LINE_OFFICIAL_ACCOUNT_ID?.trim();
   if (!lineBasicId) {
+    officialAccountCache = {
+      id: null,
+      expiresAt: now + OFFICIAL_ACCOUNT_CACHE_TTL_MS,
+    };
     return null;
   }
 
@@ -56,7 +68,12 @@ async function resolveOfficialAccountId() {
     LIMIT 1
   `;
 
-  return rows[0]?.id ?? null;
+  const resolvedId = rows[0]?.id ?? null;
+  officialAccountCache = {
+    id: resolvedId,
+    expiresAt: now + OFFICIAL_ACCOUNT_CACHE_TTL_MS,
+  };
+  return resolvedId;
 }
 
 async function resolveRankByPoints(points: number) {
@@ -684,20 +701,19 @@ export const appRouter = {
           create: {
             userId: input.userId,
             displayName: input.displayName,
+            officialAccountId: officialAccountId ?? undefined,
+            officialLinkedAt: officialAccountId ? new Date() : undefined,
           },
           update: {
             displayName: input.displayName,
+            ...(officialAccountId
+              ? {
+                  officialAccountId,
+                  officialLinkedAt: new Date(),
+                }
+              : {}),
           },
         });
-        if (officialAccountId) {
-          await prisma.$executeRaw`
-            UPDATE "users"
-            SET "officialAccountId" = ${officialAccountId},
-                "officialLinkedAt" = NOW(),
-                "updatedAt" = NOW()
-            WHERE "userId" = ${input.userId}
-          `;
-        }
 
         const currentRank = await resolveRankByPoints(baseUser.points);
         const nextRankId = currentRank.id;
@@ -723,27 +739,7 @@ export const appRouter = {
             minPoints: "asc",
           },
         });
-
-        const checkInRow = await prisma.$queryRaw<
-          Array<{ lastCheckInAt: Date | null }>
-        >`SELECT "lastCheckInAt" FROM "users" WHERE "userId" = ${user.userId} LIMIT 1`;
-        const checkedInToday = isCheckedInToday(checkInRow[0]?.lastCheckInAt ?? null);
-
-        await prisma.$executeRaw`
-          INSERT INTO "user_history"
-            ("id", "targetUserId", "actorType", "actorId", "action", "metadata", "officialAccountId", "createdAt")
-          VALUES
-            (
-              md5(random()::text || clock_timestamp()::text),
-              ${user.userId},
-              'system',
-              'liff_sync',
-              'user_profile_synced',
-              ${JSON.stringify({ displayName: input.displayName })}::jsonb,
-              ${officialAccountId},
-              NOW()
-            )
-        `;
+        const checkedInToday = isCheckedInToday(user.lastCheckInAt);
 
         return {
           ok: true,
