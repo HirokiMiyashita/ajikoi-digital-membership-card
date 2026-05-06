@@ -2,6 +2,16 @@ import { requireAdminUser } from "@/lib/admin-guard";
 import { prisma } from "@/lib/prisma";
 import SpotDeliveryEditorClient from "./spot-delivery-editor-client";
 
+type GiftTemplateUrlRow = {
+  imageUrl: string;
+};
+type GiftRow = {
+  id: string;
+  title: string;
+  imageUrl: string;
+  usageGuide: string;
+};
+
 
 function toPreviewImageUrl(imageUrl: string) {
   if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
@@ -15,7 +25,13 @@ function resolveLineImageUrl(imageUrl: string, absoluteTemplateUrls: string[]) {
     return imageUrl;
   }
   const normalized = imageUrl.replace(/^\/+/, "");
-  const matched = absoluteTemplateUrls.find((url) => url.endsWith(`/${normalized}`) || url.endsWith(normalized));
+  const candidates = [normalized];
+  if (normalized.endsWith(".svg")) {
+    candidates.push(normalized.replace(/\.svg$/i, ".png"));
+  }
+  const matched = absoluteTemplateUrls.find((url) =>
+    candidates.some((candidate) => url.endsWith(`/${candidate}`) || url.endsWith(candidate)),
+  );
   return matched ?? null;
 }
 
@@ -52,10 +68,10 @@ export default async function AdminSpotDeliveryNewPage() {
       where: adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : undefined,
     }),
   ]);
-  const absoluteTemplateUrls = templates
-    .map((row) => row.imageUrl)
-    .filter((url) => url.startsWith("http://") || url.startsWith("https://"));
-  const normalizedGifts = gifts.map((gift) => ({
+  const absoluteTemplateUrls = (templates as GiftTemplateUrlRow[])
+    .map((row: GiftTemplateUrlRow) => row.imageUrl)
+    .filter((url: string) => url.startsWith("http://") || url.startsWith("https://"));
+  const normalizedGifts = (gifts as GiftRow[]).map((gift: GiftRow) => ({
     ...gift,
     previewImageUrl: toPreviewImageUrl(gift.imageUrl),
     lineImageUrl: resolveLineImageUrl(gift.imageUrl, absoluteTemplateUrls),

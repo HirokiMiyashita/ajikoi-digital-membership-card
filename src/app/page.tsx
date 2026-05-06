@@ -205,10 +205,15 @@ export default function Home() {
           userId: profile.userId,
           giftId,
         });
-        setToastMessage(`「${result.giftTitle}」を獲得しました。`);
+        if (result.alreadyClaimed) {
+          setToastMessage(`「${result.giftTitle}」は既に獲得済みです。`);
+          setScanMessage("このギフトは既に獲得済みです。");
+        } else {
+          setToastMessage(`「${result.giftTitle}」を獲得しました。`);
+          setScanMessage("ギフトを獲得しました。");
+        }
         setTimeout(() => setToastMessage(null), 2200);
         await fetchOwnedGifts(profile.userId);
-        setScanMessage("ギフトを獲得しました。");
         const url = new URL(window.location.href);
         url.searchParams.delete("giftId");
         window.history.replaceState({}, "", url.toString());

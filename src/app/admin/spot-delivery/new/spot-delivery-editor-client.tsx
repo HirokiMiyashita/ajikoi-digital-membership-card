@@ -167,6 +167,9 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
       if (!selectedGift.lineImageUrl) {
         throw new Error("選択したギフト画像はLINEから参照できません。ギフト画像を再保存してください。");
       }
+      if (/\.svg(\?|$)/i.test(selectedGift.lineImageUrl)) {
+        throw new Error("テンプレートSVG画像はLINE Flexで表示できません。PNG/JPEG画像のギフトを選択してください。");
+      }
       const buttonUrl =
         typeof window !== "undefined"
           ? `${window.location.origin}/?giftId=${encodeURIComponent(selectedGift.id)}`

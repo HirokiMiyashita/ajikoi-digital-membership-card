@@ -1031,16 +1031,41 @@ export const appRouter = {
           throw new Error("このギフトは配布できません。期限設定を確認してください。");
         }
 
-        const created = await prisma.userGift.create({
-          data: {
-            userId: user.userId,
-            giftId: gift.id,
-            expiresAt,
-          },
-          select: {
-            id: true,
-          },
-        });
+        const createdRows = await prisma.$queryRaw<Array<{ id: string }>>`
+          WITH inserted AS (
+            INSERT INTO "user_gifts"
+              ("id", "userId", "giftId", "isUsed", "issuedAt", "expiresAt", "createdAt", "updatedAt")
+            SELECT
+              md5(random()::text || clock_timestamp()::text),
+              ${user.userId},
+              ${gift.id},
+              false,
+              NOW(),
+              ${expiresAt},
+              NOW(),
+              NOW()
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM "user_history" h
+              WHERE h."targetUserId" = ${user.userId}
+                AND h."action" = 'spot_delivery_gift_claimed'
+                AND h."metadata"->>'giftId' = ${gift.id}
+            )
+            RETURNING "id"
+          )
+          SELECT "id"
+          FROM inserted
+          LIMIT 1
+        `;
+        const created = createdRows[0] ?? null;
+        if (!created) {
+          return {
+            ok: true,
+            giftTitle: gift.title,
+            userGiftId: null,
+            alreadyClaimed: true,
+          };
+        }
 
         await prisma.$executeRaw`
           INSERT INTO "user_history"
@@ -1066,6 +1091,7 @@ export const appRouter = {
           ok: true,
           giftTitle: gift.title,
           userGiftId: created.id,
+          alreadyClaimed: false,
         };
       }),
     addVisitPoint: os

@@ -1,5 +1,6 @@
 import { put } from "@vercel/blob";
 import { PrismaClient } from "@prisma/client";
+import sharp from "sharp";
 
 const prisma = new PrismaClient();
 
@@ -31,12 +32,13 @@ async function main() {
     const item = templates[index];
     const sortOrder = index + 1;
     const svg = createSvg(item);
+    const png = await sharp(Buffer.from(svg)).png().toBuffer();
 
-    const blob = await put(`gift-templates/template-${sortOrder}.svg`, Buffer.from(svg), {
+    const blob = await put(`gift-templates/template-${sortOrder}.png`, png, {
       access: "public",
       addRandomSuffix: false,
       allowOverwrite: true,
-      contentType: "image/svg+xml",
+      contentType: "image/png",
     });
 
     await prisma.giftImageTemplate.upsert({
@@ -53,6 +55,21 @@ async function main() {
         isActive: true,
       },
     });
+
+    const legacyRelativeSvgPath = `gift-templates/template-${sortOrder}.svg`;
+    await prisma.gift.updateMany({
+      where: {
+        imageUrl: legacyRelativeSvgPath,
+      },
+      data: {
+        imageUrl: blob.url,
+      },
+    });
+    await prisma.$executeRaw`
+      UPDATE "gifts"
+      SET "imageUrl" = ${blob.url}, "updatedAt" = NOW()
+      WHERE "imageUrl" LIKE ${`%/gift-templates/template-${sortOrder}.svg`}
+    `;
   }
 
   console.log(JSON.stringify({ ok: true, templates: templates.length }, null, 2));
