@@ -682,6 +682,82 @@ export const appRouter = {
           surveyId,
         };
       }),
+    listOwnedGifts: os
+      .input(
+        z.object({
+          userId: z.string().min(1),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const now = new Date();
+        const gifts = await prisma.userGift.findMany({
+          where: {
+            userId: input.userId,
+            isUsed: false,
+            expiresAt: {
+              gte: now,
+            },
+          },
+          orderBy: [{ issuedAt: "desc" }, { createdAt: "desc" }],
+          select: {
+            id: true,
+            expiresAt: true,
+            gift: {
+              select: {
+                id: true,
+                title: true,
+                usageGuide: true,
+                imageUrl: true,
+              },
+            },
+          },
+        });
+
+        return {
+          ok: true,
+          gifts: gifts.map((row) => ({
+            userGiftId: row.id,
+            giftId: row.gift.id,
+            title: row.gift.title,
+            usageGuide: row.gift.usageGuide,
+            imageUrl: row.gift.imageUrl,
+            expiresAt: row.expiresAt.toISOString(),
+          })),
+        };
+      }),
+    useGift: os
+      .input(
+        z.object({
+          userId: z.string().min(1),
+          userGiftId: z.string().min(1),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const now = new Date();
+        const updated = await prisma.userGift.updateMany({
+          where: {
+            id: input.userGiftId,
+            userId: input.userId,
+            isUsed: false,
+            expiresAt: {
+              gte: now,
+            },
+          },
+          data: {
+            isUsed: true,
+            usedAt: now,
+          },
+        });
+
+        if (updated.count === 0) {
+          throw new Error("特典の利用に失敗しました。期限切れまたは利用済みの可能性があります。");
+        }
+
+        return {
+          ok: true,
+          userGiftId: input.userGiftId,
+        };
+      }),
     addVisitPoint: os
       .input(
         z.object({

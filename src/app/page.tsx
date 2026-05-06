@@ -16,6 +16,14 @@ type GachaPopupState = {
   won: boolean;
   giftTitle: string | null;
 };
+type OwnedGift = {
+  userGiftId: string;
+  giftId: string;
+  title: string;
+  usageGuide: string;
+  imageUrl: string;
+  expiresAt: string;
+};
 
 const surveySteps = ["gender", "visitFrequency", "companionType", "birthDate"] as const;
 type SurveyForm = {
@@ -53,6 +61,14 @@ function todayAsYmd() {
   return `${y}-${m}-${d}`;
 }
 
+function formatDateLabel(dateString: string) {
+  const date = new Date(dateString);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}/${m}/${d}`;
+}
+
 export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
@@ -64,6 +80,11 @@ export default function Home() {
   const [isGachaJudging, setIsGachaJudging] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [ownedGifts, setOwnedGifts] = useState<OwnedGift[]>([]);
+  const [selectedGift, setSelectedGift] = useState<OwnedGift | null>(null);
+  const [armedUseGiftId, setArmedUseGiftId] = useState<string | null>(null);
+  const [isUsingGift, setIsUsingGift] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [gachaPopup, setGachaPopup] = useState<GachaPopupState>({
     open: false,
     won: false,
@@ -80,6 +101,17 @@ export default function Home() {
     birthDate: "",
   });
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+
+  const fetchOwnedGifts = async (userId: string) => {
+    try {
+      const result = await rpcClient.user.listOwnedGifts({
+        userId,
+      });
+      setOwnedGifts(result.gifts);
+    } catch {
+      // ignore fetch error to keep top flow alive
+    }
+  };
 
   useEffect(() => {
     const initializeLiff = async () => {
@@ -111,6 +143,7 @@ export default function Home() {
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
         setNeedsSurvey(!syncResult.hasSurvey);
+        await fetchOwnedGifts(userProfile.userId);
         if (syncResult.checkedInToday) {
           setScanMessage("本日の入店ポイントは付与済みです。");
         }
@@ -221,6 +254,7 @@ export default function Home() {
       } else {
         setScanMessage("+1ポイントを付与しました。");
       }
+      await fetchOwnedGifts(profile.userId);
     } catch (error) {
       setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
     } finally {
@@ -231,6 +265,32 @@ export default function Home() {
 
   const handleCloseGachaPopup = () => {
     setGachaPopup((prev) => ({ ...prev, open: false }));
+  };
+
+  const handleUseGiftClick = async (gift: OwnedGift) => {
+    if (isUsingGift || !profile) return;
+    if (armedUseGiftId !== gift.userGiftId) {
+      setArmedUseGiftId(gift.userGiftId);
+      return;
+    }
+
+    setIsUsingGift(true);
+    try {
+      await rpcClient.user.useGift({
+        userId: profile.userId,
+        userGiftId: gift.userGiftId,
+      });
+      setSelectedGift(null);
+      setArmedUseGiftId(null);
+      setToastMessage("特典が使用されました。");
+      setTimeout(() => setToastMessage(null), 2200);
+      await fetchOwnedGifts(profile.userId);
+    } catch (error) {
+      setToastMessage(error instanceof Error ? error.message : "特典の利用に失敗しました。");
+      setTimeout(() => setToastMessage(null), 2200);
+    } finally {
+      setIsUsingGift(false);
+    }
   };
 
   return (
@@ -328,15 +388,55 @@ export default function Home() {
           </span>
           持っている特典
         </h3>
-        <div className="rounded-xl border border-[#d1d5db] bg-white px-6 py-10 text-center text-[#94a3b8] shadow-sm">
-          <p className="text-base">持っている特典がありません</p>
-          <p className="mt-4 text-5xl">🎁</p>
-          <p className="mt-4 text-sm leading-6">
-            会員限定のお得な情報や
-            <br />
-            特典の配布をおまちください
-          </p>
-        </div>
+        {ownedGifts.length === 0 ? (
+          <div className="rounded-xl border border-[#d1d5db] bg-white px-6 py-10 text-center text-[#94a3b8] shadow-sm">
+            <p className="text-base">持っている特典がありません</p>
+            <p className="mt-4 text-5xl">🎁</p>
+            <p className="mt-4 text-sm leading-6">
+              会員限定のお得な情報や
+              <br />
+              特典の配布をおまちください
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {ownedGifts.map((gift) => (
+              <article
+                key={gift.userGiftId}
+                className="rounded-xl border border-[#d1d5db] bg-white p-3 shadow-sm"
+              >
+                <div className="flex gap-3">
+                  <div className="h-16 w-20 shrink-0 overflow-hidden rounded-lg bg-[#f3f4f6]">
+                    <img src={gift.imageUrl} alt={gift.title} className="h-full w-full object-cover" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGift(gift);
+                      setArmedUseGiftId(null);
+                    }}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <p className="line-clamp-2 text-lg font-bold leading-snug text-[#111827]">{gift.title}</p>
+                  </button>
+                </div>
+                <div className="mt-3 flex items-center justify-between rounded-md bg-[#f3f4f6] px-3 py-2">
+                  <p className="text-sm text-[#374151]">{formatDateLabel(gift.expiresAt)}まで有効</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedGift(gift);
+                      setArmedUseGiftId(null);
+                    }}
+                    className="rounded-md bg-[#14b8a6] px-4 py-2 text-sm font-bold text-white"
+                  >
+                    特典を使う
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
         </section>
       </main>
       {isProfileLoading ? (
@@ -377,6 +477,56 @@ export default function Home() {
               閉じる
             </button>
           </section>
+        </div>
+      ) : null}
+      {selectedGift ? (
+        <div className="fixed inset-0 z-57 flex items-center justify-center bg-black/35 px-6">
+          <section className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl">
+            <div className="aspect-[4/3] w-full overflow-hidden bg-[#f3f4f6]">
+              <img src={selectedGift.imageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
+            </div>
+            <div className="p-4">
+              <p className="text-4 leading-tight font-bold text-[#111827]">{selectedGift.title}</p>
+              <p className="mt-2 text-sm font-semibold text-[#374151]">
+                {formatDateLabel(selectedGift.expiresAt)} まで有効
+              </p>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#6b7280]">
+                {selectedGift.usageGuide}
+              </p>
+              <div className="mt-4">
+                <div className="relative">
+                  {armedUseGiftId === selectedGift.userGiftId ? (
+                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 rounded-md bg-black px-3 py-1 text-xs font-semibold text-white">
+                      スタッフに見せてください
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void handleUseGiftClick(selectedGift)}
+                    disabled={isUsingGift}
+                    className="w-full rounded-lg bg-[#14b8a6] py-3 text-base font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
+                  >
+                    {isUsingGift ? "処理中..." : "特典を使う"}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedGift(null);
+                    setArmedUseGiftId(null);
+                  }}
+                  className="mt-3 w-full rounded-full bg-[#111827] py-2 text-sm font-bold text-white"
+                >
+                  × あとで使う
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {toastMessage ? (
+        <div className="fixed inset-x-0 bottom-24 z-58 mx-auto w-fit rounded-full bg-[#111827] px-4 py-2 text-sm font-semibold text-white shadow-lg">
+          {toastMessage}
         </div>
       ) : null}
       {needsSurvey && profile ? (
