@@ -1976,6 +1976,7 @@ export const appRouter = {
     reportMetrics: os
       .input(z.object({}))
       .handler(async ({ context }) => {
+        const startedAt = Date.now();
         const request = (context as { request?: Request } | undefined)?.request;
         if (!request) {
           throw new Error("リクエスト情報が見つかりません。");
@@ -1985,6 +1986,7 @@ export const appRouter = {
         const session = await adminAuth.api.getSession({
           headers: request.headers,
         });
+        const sessionResolvedAt = Date.now();
         const adminId = session?.user?.username;
         if (!adminId) {
           throw new Error("管理者ログインが必要です。");
@@ -1997,8 +1999,19 @@ export const appRouter = {
           LIMIT 1
         `;
         const officialAccountId = adminScopeRows[0]?.officialAccountId ?? null;
+        const scopeResolvedAt = Date.now();
 
         const metrics = await getAdminReportMetrics(officialAccountId);
+        const metricsResolvedAt = Date.now();
+        const elapsedMs = metricsResolvedAt - startedAt;
+        if (elapsedMs >= 500) {
+          console.info("[admin.reportMetrics-ms]", {
+            total: elapsedMs,
+            resolveSession: sessionResolvedAt - startedAt,
+            resolveScope: scopeResolvedAt - sessionResolvedAt,
+            queryMetrics: metricsResolvedAt - scopeResolvedAt,
+          });
+        }
 
         return {
           ...metrics,

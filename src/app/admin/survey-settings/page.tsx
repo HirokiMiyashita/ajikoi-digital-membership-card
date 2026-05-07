@@ -109,8 +109,16 @@ async function ensureSurveySettings(officialAccountId: string | null) {
 }
 
 export default async function AdminSurveySettingsPage() {
+  const startedAt = Date.now();
   const adminUser = await requireAdminUser();
   const settings = await ensureSurveySettings(adminUser.officialAccountId ?? null);
+  const elapsedMs = Date.now() - startedAt;
+  if (elapsedMs >= 500) {
+    console.info("[admin.survey-settings-page-ms]", {
+      total: elapsedMs,
+      questions: settings.length,
+    });
+  }
   const normalized: SurveySettingRow[] = settings.map((question) => ({
     id: question.id,
     questionKey: question.questionKey,

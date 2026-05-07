@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import MembersClient from "./members-client";
 
 export default async function AdminMembersPage() {
+  const startedAt = Date.now();
   const adminUser = await requireAdminUser();
   const [members, officialAccounts] = await Promise.all([
     prisma.user.findMany({
@@ -53,6 +54,14 @@ export default async function AdminMembersPage() {
       take: 100,
     }),
   ]);
+  const elapsedMs = Date.now() - startedAt;
+  if (elapsedMs >= 500) {
+    console.info("[admin.members-page-ms]", {
+      total: elapsedMs,
+      members: members.length,
+      officialAccounts: officialAccounts.length,
+    });
+  }
 
   return (
     <MembersClient
