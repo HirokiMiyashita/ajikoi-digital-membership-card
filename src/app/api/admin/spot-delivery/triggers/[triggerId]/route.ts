@@ -1,4 +1,4 @@
-import { LineDeliveryTriggerType } from "@prisma/client";
+import { LineDeliveryTriggerType, Prisma } from "@prisma/client";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -7,10 +7,31 @@ import { adminAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
 const triggerSettingSchema = z.object({
-  title: z.string().trim().min(1, "タイトルを入力してください。"),
-  triggerType: z.nativeEnum(LineDeliveryTriggerType),
-  message: z.string().trim().min(1, "本文を入力してください。"),
-  isActive: z.boolean().optional().default(true),
+  title: z.string().trim().min(1, "タイトルを入力してください。").optional(),
+  triggerType: z.nativeEnum(LineDeliveryTriggerType).optional(),
+  notificationText: z.string().trim().max(1000, "通知テキストは1000文字以内です。").optional(),
+  messages: z
+    .array(
+      z.union([
+        z.object({
+          type: z.literal("text"),
+          text: z.string().trim().min(1).max(1000),
+        }),
+        z.object({
+          type: z.literal("image"),
+          originalContentUrl: z.string().url(),
+          previewImageUrl: z.string().url(),
+        }),
+        z.object({
+          type: z.literal("flex"),
+          altText: z.string().trim().min(1).max(400),
+          contents: z.record(z.string(), z.unknown()),
+        }),
+      ]),
+    )
+    .min(1, "配信メッセージを1つ以上追加してください。")
+    .optional(),
+  isActive: z.boolean().optional(),
 });
 
 type RouteContext = {
@@ -58,19 +79,38 @@ export async function PATCH(request: Request, context: RouteContext) {
         id: triggerId,
         ...(scope.adminUser.officialAccountId ? { officialAccountId: scope.adminUser.officialAccountId } : {}),
       },
-      select: { id: true },
+      select: {
+        id: true,
+        title: true,
+        triggerType: true,
+        notificationText: true,
+        messages: true,
+        message: true,
+        isActive: true,
+      },
     });
     if (!target) {
       return NextResponse.json({ ok: false, message: "対象設定が見つかりません。" }, { status: 404 });
     }
 
+    const nextTitle = parsed.data.title ?? target.title;
+    const nextTriggerType = parsed.data.triggerType ?? target.triggerType;
+    const nextNotificationText = parsed.data.notificationText ?? target.notificationText;
+    const nextMessages = parsed.data.messages ?? (Array.isArray(target.messages) ? target.messages : [
+      { type: "text", text: target.message || "" },
+    ]);
+    const nextIsActive = parsed.data.isActive ?? target.isActive;
     await prisma.lineDeliveryTriggerSetting.update({
       where: { id: triggerId },
       data: {
-        title: parsed.data.title,
-        triggerType: parsed.data.triggerType,
-        message: parsed.data.message,
-        isActive: parsed.data.isActive,
+        title: nextTitle,
+        triggerType: nextTriggerType,
+        notificationText: nextNotificationText,
+        messages: nextMessages as Prisma.InputJsonValue,
+        message:
+          nextNotificationText ||
+          ((nextMessages as Array<{ type?: string; text?: string }>).find((item) => item.type === "text")?.text ?? ""),
+        isActive: nextIsActive,
       },
     });
 

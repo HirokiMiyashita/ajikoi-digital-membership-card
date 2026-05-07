@@ -253,6 +253,8 @@ model LineDeliveryTriggerSetting {
   officialAccountId String?
   title             String
   triggerType       LineDeliveryTriggerType
+  notificationText  String                  @default("")
+  messages          Json?
   message           String
   isActive          Boolean                 @default(true)
   officialAccount   OfficialAccount?        @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)

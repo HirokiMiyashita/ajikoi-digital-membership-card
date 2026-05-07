@@ -452,6 +452,8 @@ async function sendLineDeliveryTriggers(params: {
       select: {
         id: true,
         title: true,
+        notificationText: true,
+        messages: true,
         message: true,
       },
       take: 20,
@@ -467,13 +469,15 @@ async function sendLineDeliveryTriggers(params: {
           name: "line/delivery.triggered",
           data: {
             title: setting.title,
-            notificationText: setting.message,
-            messages: [
-              {
-                type: "text",
-                text: setting.message,
-              },
-            ],
+            notificationText: setting.notificationText || setting.message,
+            messages: Array.isArray(setting.messages)
+              ? setting.messages
+              : [
+                  {
+                    type: "text",
+                    text: setting.message,
+                  },
+                ],
             officialAccountId: params.officialAccountId,
             targetUserIds: [params.targetUserId],
             triggeredBy: `system:${params.triggerType.toLowerCase()}`,

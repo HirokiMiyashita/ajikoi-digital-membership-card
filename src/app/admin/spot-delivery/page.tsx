@@ -10,14 +10,6 @@ type DeliveryHistoryRow = {
   sent: number;
   failed: number;
 };
-type TriggerSettingRow = {
-  id: string;
-  title: string;
-  triggerType: "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
-  message: string;
-  isActive: boolean;
-  updatedAt: string;
-};
 
 export default async function AdminSpotDeliveryPage() {
   const adminUser = await requireAdminUser();
@@ -42,6 +34,8 @@ export default async function AdminSpotDeliveryPage() {
         id: true,
         title: true,
         triggerType: true,
+        notificationText: true,
+        messages: true,
         message: true,
         isActive: true,
         updatedAt: true,
@@ -73,6 +67,8 @@ export default async function AdminSpotDeliveryPage() {
         id: row.id,
         title: row.title,
         triggerType: row.triggerType,
+        notificationText: row.notificationText,
+        messages: row.messages,
         message: row.message,
         isActive: row.isActive,
         updatedAt: row.updatedAt.toISOString(),

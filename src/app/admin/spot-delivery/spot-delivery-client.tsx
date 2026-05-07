@@ -14,6 +14,8 @@ type TriggerSetting = {
   id: string;
   title: string;
   triggerType: "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
+  notificationText: string;
+  messages: unknown;
   message: string;
   isActive: boolean;
   updatedAt: string;
@@ -64,7 +66,10 @@ export default function SpotDeliveryClient({ deliveryHistory, triggerSettings }:
         body: JSON.stringify({
           title: row.title,
           triggerType: row.triggerType,
-          message: row.message ?? "",
+          notificationText: row.notificationText ?? "",
+          messages: Array.isArray(row.messages)
+            ? row.messages
+            : [{ type: "text", text: row.message ?? "" }],
           isActive: !row.isActive,
         }),
       });

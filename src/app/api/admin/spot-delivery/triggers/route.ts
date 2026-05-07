@@ -1,4 +1,4 @@
-import { LineDeliveryTriggerType } from "@prisma/client";
+import { LineDeliveryTriggerType, Prisma } from "@prisma/client";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -9,7 +9,27 @@ import { prisma } from "@/lib/prisma";
 const triggerSettingSchema = z.object({
   title: z.string().trim().min(1, "タイトルを入力してください。"),
   triggerType: z.nativeEnum(LineDeliveryTriggerType),
-  message: z.string().trim().min(1, "本文を入力してください。"),
+  notificationText: z.string().trim().max(1000, "通知テキストは1000文字以内です。").optional().default(""),
+  messages: z
+    .array(
+      z.union([
+        z.object({
+          type: z.literal("text"),
+          text: z.string().trim().min(1).max(1000),
+        }),
+        z.object({
+          type: z.literal("image"),
+          originalContentUrl: z.string().url(),
+          previewImageUrl: z.string().url(),
+        }),
+        z.object({
+          type: z.literal("flex"),
+          altText: z.string().trim().min(1).max(400),
+          contents: z.record(z.string(), z.unknown()),
+        }),
+      ]),
+    )
+    .min(1, "配信メッセージを1つ以上追加してください。"),
   isActive: z.boolean().optional().default(true),
 });
 
@@ -44,7 +64,11 @@ export async function POST(request: Request) {
         officialAccountId: adminUser.officialAccountId ?? null,
         title: parsed.data.title,
         triggerType: parsed.data.triggerType,
-        message: parsed.data.message,
+        notificationText: parsed.data.notificationText,
+        messages: parsed.data.messages as Prisma.InputJsonValue,
+        message:
+          parsed.data.notificationText ||
+          (parsed.data.messages.find((item) => item.type === "text")?.text ?? ""),
         isActive: parsed.data.isActive,
       },
     });
