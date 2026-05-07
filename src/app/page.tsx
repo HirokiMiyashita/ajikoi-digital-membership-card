@@ -224,17 +224,24 @@ export default function Home() {
         setNextRankName(syncResult.nextRankName);
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
-        const surveyConfigResult = await rpcClient.user.getOnboardingSurveyQuestions({});
-        const questions = surveyConfigResult.questions as SurveyQuestionConfig[];
-        const activeQuestions = questions
-          .filter((question: SurveyQuestionConfig) => question.isEnabled)
-          .sort((a: SurveyQuestionConfig, b: SurveyQuestionConfig) => a.sortOrder - b.sortOrder);
-        setSurveyQuestions(
-          questions.length > 0
-            ? questions
-            : defaultSurveyQuestions,
-        );
-        setPendingSurvey(syncResult.role === "staff" ? false : activeQuestions.length > 0 && !syncResult.hasSurvey);
+
+        if (syncResult.role === "staff") {
+          setPendingSurvey(false);
+        } else if (syncResult.hasSurvey) {
+          setPendingSurvey(false);
+        } else {
+          const surveyConfigResult = await rpcClient.user.getOnboardingSurveyQuestions({});
+          const questions = surveyConfigResult.questions as SurveyQuestionConfig[];
+          const activeQuestions = questions
+            .filter((question: SurveyQuestionConfig) => question.isEnabled)
+            .sort((a: SurveyQuestionConfig, b: SurveyQuestionConfig) => a.sortOrder - b.sortOrder);
+          setSurveyQuestions(
+            questions.length > 0
+              ? questions
+              : defaultSurveyQuestions,
+          );
+          setPendingSurvey(activeQuestions.length > 0);
+        }
         setNeedsSurvey(false);
         const publicStoreStatus = await rpcClient.user.getStoreStatus({});
         setStoreIsOpen(publicStoreStatus.isOpen);

@@ -14,6 +14,7 @@ const prismaUnsafe = prisma as unknown as {
   onboardingSurveyQuestionSetting: {
     upsert: (args: unknown) => Promise<unknown>;
     findMany: (args: unknown) => Promise<unknown[]>;
+    createMany: (args: unknown) => Promise<unknown>;
   };
 };
 
@@ -116,31 +117,65 @@ async function resolveOfficialAccountId() {
 
 async function ensureOnboardingSurveySettings(officialAccountId: string | null) {
   const scopeKey = officialAccountId ?? "global";
-  for (let index = 0; index < ONBOARDING_SURVEY_PRESETS.length; index += 1) {
-    const preset = ONBOARDING_SURVEY_PRESETS[index];
-    await prismaUnsafe.onboardingSurveyQuestionSetting.upsert({
-      where: {
-        scopeKey_questionKey: {
-          scopeKey,
-          questionKey: preset.questionKey,
-        },
-      },
-      create: {
-        scopeKey,
-        officialAccountId,
-        questionKey: preset.questionKey,
-        presetKey: preset.presetKey,
-        questionType: preset.type,
-        label: preset.label,
-        options: preset.options,
-        placeholder: preset.placeholder,
-        isEnabled: preset.defaultEnabled,
-        isRequired: preset.defaultRequired,
-        sortOrder: index,
-      },
-      update: {},
-    });
+  const existing = (await prismaUnsafe.onboardingSurveyQuestionSetting.findMany({
+    where: { scopeKey },
+    orderBy: { sortOrder: "asc" },
+    select: {
+      id: true,
+      questionKey: true,
+      presetKey: true,
+      questionType: true,
+      label: true,
+      options: true,
+      placeholder: true,
+      isEnabled: true,
+      isRequired: true,
+      sortOrder: true,
+    },
+  })) as Array<{
+    id: string;
+    questionKey: string;
+    presetKey: OnboardingSurveyPresetKey | null;
+    questionType: OnboardingSurveyQuestionType;
+    label: string;
+    options: unknown;
+    placeholder: string | null;
+    isEnabled: boolean;
+    isRequired: boolean;
+    sortOrder: number;
+  }>;
+  if (existing.length > 0) {
+    return existing.map((row) => ({
+      id: row.id,
+      questionKey: row.questionKey,
+      presetKey: row.presetKey,
+      questionType: row.questionType,
+      label: row.label,
+      options: Array.isArray(row.options) ? (row.options as OnboardingSurveyOption[]) : [],
+      placeholder: row.placeholder,
+      isEnabled: row.isEnabled,
+      isRequired: row.isRequired,
+      sortOrder: row.sortOrder,
+    }));
   }
+
+  await prismaUnsafe.onboardingSurveyQuestionSetting.createMany({
+    data: ONBOARDING_SURVEY_PRESETS.map((preset, index) => ({
+      scopeKey,
+      officialAccountId,
+      questionKey: preset.questionKey,
+      presetKey: preset.presetKey,
+      questionType: preset.type,
+      label: preset.label,
+      options: preset.options,
+      placeholder: preset.placeholder,
+      isEnabled: preset.defaultEnabled,
+      isRequired: preset.defaultRequired,
+      sortOrder: index,
+    })),
+    skipDuplicates: true,
+  });
+
   const rows = (await prismaUnsafe.onboardingSurveyQuestionSetting.findMany({
     where: { scopeKey },
     orderBy: { sortOrder: "asc" },
