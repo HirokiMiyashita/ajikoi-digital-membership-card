@@ -1,10 +1,12 @@
 import { requireAdminUser } from "@/lib/admin-guard";
+import { getAdminReportMetricsResponse } from "@/orpc/router";
 import ReportClient from "./report-client";
 
 export default async function AdminReportPage() {
-  await requireAdminUser();
+  const adminUser = await requireAdminUser();
+  const initialData = await getAdminReportMetricsResponse(adminUser.officialAccountId ?? null);
 
   return (
-    <ReportClient />
+    <ReportClient initialData={initialData} />
   );
 }

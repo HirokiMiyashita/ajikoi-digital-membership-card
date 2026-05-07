@@ -1128,6 +1128,37 @@ async function getCachedAdminReportMetrics(officialAccountId: string | null) {
   }
 }
 
+function serializeAdminReportMetrics(metrics: AdminReportMetrics) {
+  return {
+    ...metrics,
+    memberTrend: metrics.memberTrend.map((row) => ({
+      day: row.day.toISOString(),
+      members: row.members,
+    })),
+    repeaterTrend: metrics.repeaterTrend.map((row) => ({
+      day: row.day.toISOString(),
+      repeaters: row.repeaters,
+    })),
+    visitTrend: metrics.visitTrend.map((row) => ({
+      day: row.day.toISOString(),
+      newVisits: row.newVisits,
+      repeatVisits: row.repeatVisits,
+      totalVisits: row.totalVisits,
+    })),
+    latestDelivery: metrics.latestDelivery
+      ? {
+          ...metrics.latestDelivery,
+          sentAt: metrics.latestDelivery.sentAt.toISOString(),
+        }
+      : null,
+  };
+}
+
+export async function getAdminReportMetricsResponse(officialAccountId: string | null) {
+  const { metrics } = await getCachedAdminReportMetrics(officialAccountId);
+  return serializeAdminReportMetrics(metrics);
+}
+
 export const appRouter = {
   system: {
     health: os.handler(() => {
@@ -2065,29 +2096,7 @@ export const appRouter = {
           });
         }
 
-        return {
-          ...metrics,
-          memberTrend: metrics.memberTrend.map((row) => ({
-            day: row.day.toISOString(),
-            members: row.members,
-          })),
-          repeaterTrend: metrics.repeaterTrend.map((row) => ({
-            day: row.day.toISOString(),
-            repeaters: row.repeaters,
-          })),
-          visitTrend: metrics.visitTrend.map((row) => ({
-            day: row.day.toISOString(),
-            newVisits: row.newVisits,
-            repeatVisits: row.repeatVisits,
-            totalVisits: row.totalVisits,
-          })),
-          latestDelivery: metrics.latestDelivery
-            ? {
-                ...metrics.latestDelivery,
-                sentAt: metrics.latestDelivery.sentAt.toISOString(),
-              }
-            : null,
-        };
+        return serializeAdminReportMetrics(metrics);
       }),
   },
 };

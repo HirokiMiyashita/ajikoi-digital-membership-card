@@ -45,6 +45,10 @@ type ReportMetrics = {
   } | null;
 };
 
+type Props = {
+  initialData?: ReportMetrics;
+};
+
 function toLabel(day: string) {
   return day.slice(5, 10);
 }
@@ -85,15 +89,18 @@ function formatRecentDeliverySentAt(iso: string) {
   return `${month}/${day} ${hour}:${minute}`;
 }
 
-export default function ReportClient() {
-  const [data, setData] = useState<ReportMetrics | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function ReportClient({ initialData }: Props) {
+  const [data, setData] = useState<ReportMetrics | null>(initialData ?? null);
+  const [loading, setLoading] = useState(initialData ? false : true);
   const [error, setError] = useState<string | null>(null);
   const [visitGranularity, setVisitGranularity] = useState<VisitGranularity>("day");
   const [showNewVisits, setShowNewVisits] = useState(true);
   const [showRepeatVisits, setShowRepeatVisits] = useState(true);
 
   useEffect(() => {
+    if (initialData) {
+      return;
+    }
     const fetchMetrics = async () => {
       setLoading(true);
       setError(null);
@@ -108,11 +115,11 @@ export default function ReportClient() {
     };
 
     void fetchMetrics();
-  }, []);
+  }, [initialData]);
 
   const memberTrend = data?.memberTrend ?? [];
   const repeaterTrend = data?.repeaterTrend ?? [];
-  const visitTrend = data?.visitTrend ?? [];
+  const visitTrend = useMemo(() => data?.visitTrend ?? [], [data]);
   const repeaterSummary = data?.repeaterSummary ?? {
     members: 0,
     repeaters: 0,
