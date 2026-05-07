@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { type AdminUser } from "@prisma/client";
+import { createHash } from "node:crypto";
 
 import { adminAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
@@ -10,42 +11,62 @@ const adminUserCache = new Map<string, { user: AdminUser; expiresAt: number }>()
 const ADMIN_SESSION_CACHE_TTL_MS = 60 * 1000;
 const adminSessionCache = new Map<string, { adminId: string; expiresAt: number }>();
 
-function extractCookieValues(cookieHeader: string | null) {
-  if (!cookieHeader) {
-    return [];
-  }
-  const values: string[] = [];
+function parseCookieEntries(cookieHeader: string | null) {
+  if (!cookieHeader) return [] as Array<{ name: string; value: string }>;
+  const entries: Array<{ name: string; value: string }> = [];
   for (const pair of cookieHeader.split(";")) {
     const separator = pair.indexOf("=");
-    if (separator <= 0) {
-      continue;
-    }
+    if (separator <= 0) continue;
+    const name = pair.slice(0, separator).trim();
     const rawValue = pair.slice(separator + 1).trim().replace(/^"|"$/g, "");
-    if (!rawValue) {
-      continue;
-    }
+    if (!name || !rawValue) continue;
     try {
-      values.push(decodeURIComponent(rawValue));
+      entries.push({ name, value: decodeURIComponent(rawValue) });
     } catch {
-      values.push(rawValue);
+      entries.push({ name, value: rawValue });
     }
   }
-  return [...new Set(values)];
+  return entries;
+}
+
+function getSessionTokenCandidates(cookieHeader: string | null) {
+  const cookieEntries = parseCookieEntries(cookieHeader);
+  const likelySessionEntries = cookieEntries.filter((entry) => /auth|session|token/i.test(entry.name));
+  const baseValues = likelySessionEntries.length > 0
+    ? likelySessionEntries.map((entry) => entry.value)
+    : cookieEntries.map((entry) => entry.value);
+  const candidates = new Set<string>();
+  for (const value of baseValues) {
+    if (!value) continue;
+    candidates.add(value);
+    const dotIndex = value.indexOf(".");
+    if (dotIndex > 0) {
+      candidates.add(value.slice(0, dotIndex));
+    }
+  }
+  for (const value of [...candidates]) {
+    candidates.add(createHash("sha256").update(value).digest("hex"));
+  }
+  const cacheKeyBase = [...candidates].sort().join("|");
+  return {
+    tokenCandidates: [...candidates],
+    sessionCacheKey: cacheKeyBase ? createHash("sha1").update(cacheKeyBase).digest("hex") : null,
+  };
 }
 
 export async function requireAdminUser() {
   const startedAt = Date.now();
   const requestHeaders = await headers();
   const headersResolvedAt = Date.now();
-  const cookieHeader = requestHeaders.get("cookie") ?? "";
+  const cookieHeader = requestHeaders.get("cookie");
+  const { tokenCandidates, sessionCacheKey } = getSessionTokenCandidates(cookieHeader);
   let adminId: string | null = null;
-  const sessionCached = cookieHeader ? adminSessionCache.get(cookieHeader) : undefined;
+  const sessionCached = sessionCacheKey ? adminSessionCache.get(sessionCacheKey) : undefined;
   const hasValidSessionCache = Boolean(sessionCached && sessionCached.expiresAt > Date.now());
   if (hasValidSessionCache && sessionCached) {
     adminId = sessionCached.adminId;
   }
-  const tokenCandidates = extractCookieValues(cookieHeader);
-  if (tokenCandidates.length > 0) {
+  if (!adminId && tokenCandidates.length > 0) {
     const fastSession = await prisma.adminAuthSession.findFirst({
       where: {
         token: { in: tokenCandidates },
@@ -80,8 +101,8 @@ export async function requireAdminUser() {
   if (!adminId) {
     redirect("/admin/login");
   }
-  if (cookieHeader) {
-    adminSessionCache.set(cookieHeader, {
+  if (sessionCacheKey) {
+    adminSessionCache.set(sessionCacheKey, {
       adminId,
       expiresAt: Date.now() + ADMIN_SESSION_CACHE_TTL_MS,
     });
