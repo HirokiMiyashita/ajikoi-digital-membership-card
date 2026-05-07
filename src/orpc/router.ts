@@ -274,6 +274,18 @@ async function resolveNextRankByPoints(points: number) {
   return nextRank ?? null;
 }
 
+function findRankByPoints(ranks: CachedRank[], points: number) {
+  const rank = ranks.find((candidate) => points >= candidate.minPoints && points <= candidate.maxPoints);
+  if (!rank) {
+    throw new Error(`No rank found for points: ${points}`);
+  }
+  return rank;
+}
+
+function findNextRankByPoints(ranks: CachedRank[], points: number) {
+  return ranks.find((candidate) => candidate.minPoints > points) ?? null;
+}
+
 function addDays(base: Date, days: number) {
   const date = new Date(base);
   date.setDate(date.getDate() + days);
@@ -636,6 +648,7 @@ type UpsertedLiffUserRow = {
   role: UserRoleValue | null;
   lastCheckInAt: Date | null;
   surveyId: string | null;
+  isNew: boolean;
 };
 
 function formatJstYmd(date: Date) {
@@ -1076,14 +1089,17 @@ export const appRouter = {
       )
       .handler(async ({ input }) => {
         const startedAt = Date.now();
+        const ranksPromise = getCachedRanks();
         const officialAccountId = await resolveOfficialAccountId();
         const officialResolvedAt = Date.now();
-        const existingUser = await prisma.user.findUnique({
-          where: { userId: input.userId },
-          select: { userId: true },
-        });
         const upsertRows = await prisma.$queryRaw<UpsertedLiffUserRow[]>`
-          WITH upserted AS (
+          WITH existed AS (
+            SELECT 1 AS "present"
+            FROM "users"
+            WHERE "userId" = ${input.userId}
+            LIMIT 1
+          ),
+          upserted AS (
             INSERT INTO "users" (
               "userId",
               "displayName",
@@ -1127,7 +1143,8 @@ export const appRouter = {
             u."nextRank",
             u."role",
             u."lastCheckInAt",
-            u."surveyId"
+            u."surveyId",
+            NOT EXISTS (SELECT 1 FROM existed) AS "isNew"
           FROM upserted u
           UNION ALL
           SELECT
@@ -1136,7 +1153,8 @@ export const appRouter = {
             u2."nextRank",
             u2."role",
             u2."lastCheckInAt",
-            u2."surveyId"
+            u2."surveyId",
+            NOT EXISTS (SELECT 1 FROM existed) AS "isNew"
           FROM "users" u2
           WHERE u2."userId" = ${input.userId}
             AND NOT EXISTS (SELECT 1 FROM upserted)
@@ -1148,14 +1166,13 @@ export const appRouter = {
         }
         const upsertedAt = Date.now();
 
-        const [currentRank, nextRank] = await Promise.all([
-          resolveRankByPoints(user.points),
-          resolveNextRankByPoints(user.points),
-        ]);
+        const ranks = await ranksPromise;
+        const currentRank = findRankByPoints(ranks, user.points);
+        const nextRank = findNextRankByPoints(ranks, user.points);
         const rankedAt = Date.now();
         const checkedInToday = isCheckedInToday(user.lastCheckInAt);
         let signupGiftTitle: string | null = null;
-        if (!existingUser) {
+        if (user.isNew) {
           const benefitSetting = await getMemberBenefitSetting(officialAccountId);
           if (benefitSetting?.signupGiftId) {
             signupGiftTitle = await issueGiftFromSetting({
