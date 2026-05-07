@@ -6,6 +6,7 @@ const menuItems = [
   { label: "来店ガチャ設定", href: "/admin/visit-gacha" },
   { label: "会員設定", href: "/admin/member-settings" },
   { label: "会員登録アンケート", href: "/admin/survey-settings" },
+  { label: "QRコードを印刷", href: "/admin/print-qr" },
 ];
 
 export default async function AdminMenuPage() {

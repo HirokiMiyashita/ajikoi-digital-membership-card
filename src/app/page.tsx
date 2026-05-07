@@ -156,10 +156,13 @@ export default function Home() {
   const [needsSurvey, setNeedsSurvey] = useState(false);
   const [surveyStep, setSurveyStep] = useState(0);
   const [surveyQuestions, setSurveyQuestions] = useState<SurveyQuestionConfig[]>(defaultSurveyQuestions);
+  const [pendingSurvey, setPendingSurvey] = useState(false);
+  const [isAutoCheckinProcessing, setIsAutoCheckinProcessing] = useState(false);
   const [isSubmittingSurvey, setIsSubmittingSurvey] = useState(false);
   const [surveyError, setSurveyError] = useState<string | null>(null);
   const [surveyForm, setSurveyForm] = useState<Record<string, string>>({});
   const claimedGiftQueryRef = useRef<string | null>(null);
+  const autoCheckinTokenRef = useRef<string | null>(null);
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
 
   const fetchOwnedGifts = async (userId: string) => {
@@ -227,7 +230,8 @@ export default function Home() {
             ? questions
             : defaultSurveyQuestions,
         );
-        setNeedsSurvey(syncResult.role === "staff" ? false : activeQuestions.length > 0 && !syncResult.hasSurvey);
+        setPendingSurvey(syncResult.role === "staff" ? false : activeQuestions.length > 0 && !syncResult.hasSurvey);
+        setNeedsSurvey(false);
         const publicStoreStatus = await rpcClient.user.getStoreStatus({});
         setStoreIsOpen(publicStoreStatus.isOpen);
         if (syncResult.role === "staff") {
@@ -275,6 +279,69 @@ export default function Home() {
       cancelled = true;
     };
   }, [liffId]);
+
+  useEffect(() => {
+    if (!profile || typeof window === "undefined") return;
+    if (userRole === "staff" || isStaffPortal) {
+      setNeedsSurvey(false);
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    const checkinToken = url.searchParams.get("checkinToken")?.trim() ?? "";
+    if (!checkinToken) {
+      setNeedsSurvey(pendingSurvey);
+      return;
+    }
+    if (autoCheckinTokenRef.current === checkinToken) {
+      setNeedsSurvey(pendingSurvey);
+      return;
+    }
+    autoCheckinTokenRef.current = checkinToken;
+
+    const runAutoCheckin = async () => {
+      setIsAutoCheckinProcessing(true);
+      setScanMessage("来店ポイントを付与しています...");
+      setGachaPopup({ open: false, won: false, giftTitle: null });
+      try {
+        setIsGachaJudging(true);
+        const result = await rpcClient.user.addVisitPoint({
+          userId: profile.userId,
+          qrValue: checkinToken,
+        });
+        setPoints(result.points);
+        setCurrentRankName(result.currentRankName);
+        setNextRankName(result.nextRankName);
+        setPointsToNextRank(result.pointsToNextRank);
+        setCheckedInToday(result.checkedInToday);
+        const giftSuffix =
+          result.grantedGiftTitles.length > 0
+            ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
+            : "";
+        if (result.gacha?.executed) {
+          setGachaPopup({
+            open: true,
+            won: result.gacha.won,
+            giftTitle: result.gacha.giftTitle ?? null,
+          });
+          setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャ結果を確認してください。`);
+        } else {
+          setScanMessage(`+1ポイントを付与しました。${giftSuffix}`.trim());
+        }
+        await fetchOwnedGifts(profile.userId);
+      } catch (error) {
+        setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
+      } finally {
+        setIsGachaJudging(false);
+        setIsAutoCheckinProcessing(false);
+        url.searchParams.delete("checkinToken");
+        window.history.replaceState({}, "", url.toString());
+        setNeedsSurvey(pendingSurvey);
+      }
+    };
+
+    void runAutoCheckin();
+  }, [isStaffPortal, pendingSurvey, profile, userRole]);
 
   useEffect(() => {
     const claimGiftFromQuery = async () => {
@@ -793,7 +860,7 @@ export default function Home() {
           {toastMessage}
         </div>
       ) : null}
-      {needsSurvey && profile ? (
+      {needsSurvey && profile && !isAutoCheckinProcessing ? (
         <div className="fixed inset-0 z-60 overflow-y-auto bg-[#f3f4f7]">
           <div className="mx-auto min-h-screen w-full max-w-md px-6 pb-10 pt-6 text-[#1f2937]">
             <section className="rounded-xl bg-[#d5e8e8] px-4 py-5">
