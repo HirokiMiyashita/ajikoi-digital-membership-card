@@ -761,11 +761,20 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
   `;
 
   const visitTrendPromise = prisma.$queryRaw<VisitTrendRow[]>`
-    WITH bounds AS (
-      SELECT COALESCE(MIN(c."checkedInAt")::date, CURRENT_DATE) AS start_day
+    WITH daily_visits AS (
+      SELECT
+        c."checkedInAt"::date AS day,
+        SUM(CASE WHEN c."isFirstVisit" THEN 1 ELSE 0 END)::int AS "newVisits",
+        SUM(CASE WHEN c."isRepeatVisit" THEN 1 ELSE 0 END)::int AS "repeatVisits",
+        COUNT(*)::int AS "totalVisits"
       FROM "user_checkins" c
       WHERE 1 = 1
       ${officialAccountFilterCheckins}
+      GROUP BY c."checkedInAt"::date
+    ),
+    bounds AS (
+      SELECT COALESCE(MIN(day), CURRENT_DATE) AS start_day
+      FROM daily_visits
     ),
     days AS (
       SELECT generate_series(
@@ -776,15 +785,11 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     )
     SELECT
       d.day AS "day",
-      COALESCE(SUM(CASE WHEN c."isFirstVisit" THEN 1 ELSE 0 END), 0)::int AS "newVisits",
-      COALESCE(SUM(CASE WHEN c."isRepeatVisit" THEN 1 ELSE 0 END), 0)::int AS "repeatVisits",
-      COALESCE(COUNT(c.*), 0)::int AS "totalVisits"
+      COALESCE(v."newVisits", 0)::int AS "newVisits",
+      COALESCE(v."repeatVisits", 0)::int AS "repeatVisits",
+      COALESCE(v."totalVisits", 0)::int AS "totalVisits"
     FROM days d
-    LEFT JOIN "user_checkins" c
-      ON c."checkedInAt" >= d.day
-      AND c."checkedInAt" < d.day + INTERVAL '1 day'
-      ${officialAccountFilterCheckins}
-    GROUP BY d.day
+    LEFT JOIN daily_visits v ON v.day = d.day
     ORDER BY d.day ASC
   `;
 
@@ -1076,6 +1081,47 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
         }
       : null,
   };
+}
+
+type AdminReportMetrics = Awaited<ReturnType<typeof getAdminReportMetrics>>;
+const ADMIN_REPORT_METRICS_TTL_MS = 30_000;
+const adminReportMetricsCache = new Map<string, { expiresAt: number; value: AdminReportMetrics }>();
+const adminReportMetricsInFlight = new Map<string, Promise<AdminReportMetrics>>();
+
+async function getCachedAdminReportMetrics(officialAccountId: string | null) {
+  const cacheKey = officialAccountId ?? "__global__";
+  const now = Date.now();
+  const cached = adminReportMetricsCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return {
+      metrics: cached.value,
+      cacheHit: true,
+    };
+  }
+
+  const inflight = adminReportMetricsInFlight.get(cacheKey);
+  if (inflight) {
+    return {
+      metrics: await inflight,
+      cacheHit: true,
+    };
+  }
+
+  const promise = getAdminReportMetrics(officialAccountId);
+  adminReportMetricsInFlight.set(cacheKey, promise);
+  try {
+    const metrics = await promise;
+    adminReportMetricsCache.set(cacheKey, {
+      value: metrics,
+      expiresAt: now + ADMIN_REPORT_METRICS_TTL_MS,
+    });
+    return {
+      metrics,
+      cacheHit: false,
+    };
+  } finally {
+    adminReportMetricsInFlight.delete(cacheKey);
+  }
 }
 
 export const appRouter = {
@@ -2005,7 +2051,7 @@ export const appRouter = {
         const officialAccountId = adminScopeRows[0]?.officialAccountId ?? null;
         const scopeResolvedAt = Date.now();
 
-        const metrics = await getAdminReportMetrics(officialAccountId);
+        const { metrics, cacheHit } = await getCachedAdminReportMetrics(officialAccountId);
         const metricsResolvedAt = Date.now();
         const elapsedMs = metricsResolvedAt - startedAt;
         if (elapsedMs >= 500) {
@@ -2014,6 +2060,7 @@ export const appRouter = {
             resolveSession: sessionResolvedAt - startedAt,
             resolveScope: scopeResolvedAt - sessionResolvedAt,
             queryMetrics: metricsResolvedAt - scopeResolvedAt,
+            cacheHit,
           });
         }
 
