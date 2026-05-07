@@ -9,6 +9,7 @@ import {
   type OnboardingSurveyQuestionType,
   getOnboardingSurveyPresetByPresetKey,
 } from "@/lib/onboarding-survey";
+import { adminAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 const prismaUnsafe = prisma as unknown as {
   onboardingSurveyQuestionSetting: {
@@ -620,16 +621,15 @@ type VisitTrendRow = {
   totalVisits: number;
 };
 
-type RepeaterSummary = {
+type VisitStatsRow = {
   members: number;
   repeaters: number;
   repeatRate: number;
-};
-
-type VisitCountDistributionRow = {
-  label: string;
-  count: number;
-  sortOrder: number;
+  visit1: number;
+  visit2: number;
+  visit3: number;
+  visit4: number;
+  visit5Plus: number;
 };
 
 type AgeDistributionRow = {
@@ -724,6 +724,14 @@ async function getLineUniqueImpressionByAggregationUnit(
 }
 
 async function getAdminReportMetrics(officialAccountId: string | null) {
+  const queryStartedAt = Date.now();
+  const queryTimings: Record<string, number> = {};
+  const measure = async <T>(name: string, run: () => Promise<T>) => {
+    const startedAt = Date.now();
+    const value = await run();
+    queryTimings[name] = Date.now() - startedAt;
+    return value;
+  };
   const officialAccountFilterUsers = officialAccountId
     ? Prisma.sql`AND u."officialAccountId" = ${officialAccountId}`
     : Prisma.empty;
@@ -731,7 +739,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}`
     : Prisma.empty;
 
-  const memberTrendPromise = prisma.$queryRaw<MemberTrendRow[]>`
+  const memberTrendPromise = measure("memberTrend", () => prisma.$queryRaw<MemberTrendRow[]>`
     WITH daily_new_members AS (
       SELECT
         u."createdAt"::date AS day,
@@ -758,9 +766,9 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     FROM days d
     LEFT JOIN daily_new_members dnm ON dnm.day = d.day
     ORDER BY d.day ASC
-  `;
+  `);
 
-  const visitTrendPromise = prisma.$queryRaw<VisitTrendRow[]>`
+  const visitTrendPromise = measure("visitTrend", () => prisma.$queryRaw<VisitTrendRow[]>`
     WITH daily_visits AS (
       SELECT
         c."checkedInAt"::date AS day,
@@ -791,9 +799,9 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     FROM days d
     LEFT JOIN daily_visits v ON v.day = d.day
     ORDER BY d.day ASC
-  `;
+  `);
 
-  const repeaterTrendPromise = prisma.$queryRaw<RepeaterTrendRow[]>`
+  const repeaterTrendPromise = measure("repeaterTrend", () => prisma.$queryRaw<RepeaterTrendRow[]>`
     WITH eligible_users AS (
       SELECT u."userId", u."createdAt"::date AS created_day
       FROM "users" u
@@ -838,39 +846,9 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     FROM days d
     LEFT JOIN daily_repeaters dr ON dr.day = d.day
     ORDER BY d.day ASC
-  `;
+  `);
 
-  const repeaterSummaryRowsPromise = prisma.$queryRaw<RepeaterSummary[]>`
-    WITH eligible_users AS (
-      SELECT u."userId"
-      FROM "users" u
-      WHERE 1 = 1
-      ${officialAccountFilterUsers}
-    ),
-    user_visit_counts AS (
-      SELECT
-        eu."userId",
-        COUNT(c.*)::int AS visit_count
-      FROM eligible_users eu
-      LEFT JOIN "user_checkins" c
-        ON c."userId" = eu."userId"
-        ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
-      GROUP BY eu."userId"
-    ),
-    summary AS (
-      SELECT
-        COUNT(*)::int AS members,
-        COUNT(*) FILTER (WHERE uvc.visit_count >= 2)::int AS repeaters
-      FROM user_visit_counts uvc
-    )
-    SELECT
-      s.members AS "members",
-      s.repeaters AS "repeaters",
-      COALESCE(ROUND((s.repeaters::numeric / NULLIF(s.members, 0)::numeric) * 100, 2), 0)::float AS "repeatRate"
-    FROM summary s
-  `;
-
-  const visitCountDistributionRowsPromise = prisma.$queryRaw<VisitCountDistributionRow[]>`
+  const visitStatsRowsPromise = measure("visitStats", () => prisma.$queryRaw<VisitStatsRow[]>`
     WITH visits_per_user AS (
       SELECT
         u."userId",
@@ -883,21 +861,26 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
       ${officialAccountFilterUsers}
       GROUP BY u."userId"
     )
-    SELECT * FROM (
-      SELECT '1回'::text AS "label", COUNT(*) FILTER (WHERE visits = 1)::int AS "count", 1::int AS "sortOrder" FROM visits_per_user
-      UNION ALL
-      SELECT '2回'::text AS "label", COUNT(*) FILTER (WHERE visits = 2)::int AS "count", 2::int AS "sortOrder" FROM visits_per_user
-      UNION ALL
-      SELECT '3回'::text AS "label", COUNT(*) FILTER (WHERE visits = 3)::int AS "count", 3::int AS "sortOrder" FROM visits_per_user
-      UNION ALL
-      SELECT '4回'::text AS "label", COUNT(*) FILTER (WHERE visits = 4)::int AS "count", 4::int AS "sortOrder" FROM visits_per_user
-      UNION ALL
-      SELECT '5回〜'::text AS "label", COUNT(*) FILTER (WHERE visits >= 5)::int AS "count", 5::int AS "sortOrder" FROM visits_per_user
-    ) t
-    ORDER BY t."sortOrder" ASC
-  `;
+    SELECT
+      COUNT(*)::int AS "members",
+      COUNT(*) FILTER (WHERE visits >= 2)::int AS "repeaters",
+      COALESCE(
+        ROUND(
+          (COUNT(*) FILTER (WHERE visits >= 2))::numeric
+          / NULLIF(COUNT(*), 0)::numeric * 100,
+          2
+        ),
+        0
+      )::float AS "repeatRate",
+      COUNT(*) FILTER (WHERE visits = 1)::int AS "visit1",
+      COUNT(*) FILTER (WHERE visits = 2)::int AS "visit2",
+      COUNT(*) FILTER (WHERE visits = 3)::int AS "visit3",
+      COUNT(*) FILTER (WHERE visits = 4)::int AS "visit4",
+      COUNT(*) FILTER (WHERE visits >= 5)::int AS "visit5Plus"
+    FROM visits_per_user
+  `);
 
-  const ageDistributionRowsPromise = prisma.$queryRaw<AgeDistributionRow[]>`
+  const ageDistributionRowsPromise = measure("ageDistribution", () => prisma.$queryRaw<AgeDistributionRow[]>`
     WITH surveyed AS (
       SELECT
         CASE
@@ -930,9 +913,9 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
       SELECT 'その他'::text AS "label", COUNT(*) FILTER (WHERE age_band = 'その他')::int AS "count", 7::int AS "sortOrder" FROM surveyed
     ) t
     ORDER BY t."sortOrder" ASC
-  `;
+  `);
 
-  const genderDistributionRowsPromise = prisma.$queryRaw<GenderDistributionRow[]>`
+  const genderDistributionRowsPromise = measure("genderDistribution", () => prisma.$queryRaw<GenderDistributionRow[]>`
     WITH surveyed AS (
       SELECT
         CASE
@@ -953,9 +936,9 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
       SELECT 'その他'::text AS "label", COUNT(*) FILTER (WHERE gender_label = 'その他')::int AS "count", 3::int AS "sortOrder" FROM surveyed
     ) t
     ORDER BY t."sortOrder" ASC
-  `;
+  `);
 
-  const revisitFrequencyRowsPromise = prisma.$queryRaw<RevisitFrequencyRow[]>`
+  const revisitFrequencyRowsPromise = measure("revisitFrequency", () => prisma.$queryRaw<RevisitFrequencyRow[]>`
     WITH first_checkins AS (
       SELECT c."userId", MIN(c."checkedInAt") AS first_at
       FROM "user_checkins" c
@@ -988,9 +971,9 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
       COUNT(*)::int AS "usersCount",
       COALESCE(ROUND(AVG(v.visits)::numeric, 2), 0)::float AS "avgVisitsIn30Days"
     FROM visits_30d v
-  `;
+  `);
 
-  const latestDeliveryRowsPromise = prisma.$queryRaw<LatestDeliveryRow[]>`
+  const latestDeliveryRowsPromise = measure("latestDelivery", () => prisma.$queryRaw<LatestDeliveryRow[]>`
     SELECT
       h."createdAt" AS "sentAt",
       COALESCE(h."metadata"->>'message', '') AS "message",
@@ -1002,14 +985,13 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
       ${officialAccountId ? Prisma.sql`AND h."officialAccountId" = ${officialAccountId}` : Prisma.empty}
     ORDER BY h."createdAt" DESC
     LIMIT 1
-  `;
+  `);
 
   const [
     memberTrend,
     visitTrend,
     repeaterTrend,
-    repeaterSummaryRows,
-    visitCountDistributionRows,
+    visitStatsRows,
     ageDistributionRows,
     genderDistributionRows,
     revisitFrequencyRows,
@@ -1018,8 +1000,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     memberTrendPromise,
     visitTrendPromise,
     repeaterTrendPromise,
-    repeaterSummaryRowsPromise,
-    visitCountDistributionRowsPromise,
+    visitStatsRowsPromise,
     ageDistributionRowsPromise,
     genderDistributionRowsPromise,
     revisitFrequencyRowsPromise,
@@ -1030,34 +1011,57 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
   let latestDeliveryVisits = 0;
   let latestDeliveryOpened: number | null = null;
   if (latestDelivery) {
-    const latestDeliveryVisitRows = await prisma.$queryRaw<LatestDeliveryVisitRow[]>`
-      SELECT COUNT(*)::int AS "visits"
-      FROM "user_checkins" c
-      WHERE c."checkedInAt" >= ${latestDelivery.sentAt}
-      ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
-    `;
+    const [latestDeliveryVisitRows, opened] = await Promise.all([
+      measure("latestDeliveryVisits", () => prisma.$queryRaw<LatestDeliveryVisitRow[]>`
+        SELECT COUNT(*)::int AS "visits"
+        FROM "user_checkins" c
+        WHERE c."checkedInAt" >= ${latestDelivery.sentAt}
+        ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
+      `),
+      latestDelivery.aggregationUnit
+        ? measure("latestDeliveryOpened", () =>
+            getLineUniqueImpressionByAggregationUnit(latestDelivery.aggregationUnit!, latestDelivery.sentAt),
+          )
+        : Promise.resolve(null),
+    ]);
     latestDeliveryVisits = latestDeliveryVisitRows[0]?.visits ?? 0;
-    if (latestDelivery.aggregationUnit) {
-      latestDeliveryOpened = await getLineUniqueImpressionByAggregationUnit(
-        latestDelivery.aggregationUnit,
-        latestDelivery.sentAt,
-      );
-    }
+    latestDeliveryOpened = opened;
+  }
+
+  const visitStats = visitStatsRows[0] ?? {
+    members: 0,
+    repeaters: 0,
+    repeatRate: 0,
+    visit1: 0,
+    visit2: 0,
+    visit3: 0,
+    visit4: 0,
+    visit5Plus: 0,
+  };
+  const queryElapsedMs = Date.now() - queryStartedAt;
+  if (queryElapsedMs >= 300) {
+    console.info("[admin.reportMetrics-query-breakdown-ms]", {
+      total: queryElapsedMs,
+      ...queryTimings,
+    });
   }
 
   return {
     memberTrend,
     repeaterTrend,
     visitTrend,
-    repeaterSummary: repeaterSummaryRows[0] ?? {
-      members: 0,
-      repeaters: 0,
-      repeatRate: 0,
+    repeaterSummary: {
+      members: visitStats.members,
+      repeaters: visitStats.repeaters,
+      repeatRate: visitStats.repeatRate,
     },
-    visitCountDistribution: visitCountDistributionRows.map((row) => ({
-      label: row.label,
-      count: row.count,
-    })),
+    visitCountDistribution: [
+      { label: "1回", count: visitStats.visit1 },
+      { label: "2回", count: visitStats.visit2 },
+      { label: "3回", count: visitStats.visit3 },
+      { label: "4回", count: visitStats.visit4 },
+      { label: "5回〜", count: visitStats.visit5Plus },
+    ],
     ageDistribution: ageDistributionRows.map((row) => ({
       label: row.label,
       count: row.count,
@@ -2032,7 +2036,6 @@ export const appRouter = {
           throw new Error("リクエスト情報が見つかりません。");
         }
 
-        const { adminAuth } = await import("@/lib/admin-auth");
         const session = await adminAuth.api.getSession({
           headers: request.headers,
         });
@@ -2042,13 +2045,11 @@ export const appRouter = {
           throw new Error("管理者ログインが必要です。");
         }
 
-        const adminScopeRows = await prisma.$queryRaw<Array<{ officialAccountId: string | null }>>`
-          SELECT "officialAccountId"
-          FROM "admin_user"
-          WHERE "id" = ${adminId}
-          LIMIT 1
-        `;
-        const officialAccountId = adminScopeRows[0]?.officialAccountId ?? null;
+        const adminScope = await prisma.adminUser.findUnique({
+          where: { id: adminId },
+          select: { officialAccountId: true },
+        });
+        const officialAccountId = adminScope?.officialAccountId ?? null;
         const scopeResolvedAt = Date.now();
 
         const { metrics, cacheHit } = await getCachedAdminReportMetrics(officialAccountId);
