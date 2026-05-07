@@ -1,5 +1,5 @@
 import { os } from "@orpc/server";
-import { GiftExpiryType, Prisma, UserRole } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
@@ -7,6 +7,9 @@ import { prisma } from "@/lib/prisma";
 const OFFICIAL_ACCOUNT_CACHE_TTL_MS = 5 * 60 * 1000;
 let officialAccountCache: { id: string | null; expiresAt: number } | null = null;
 const RANK_CACHE_TTL_MS = 5 * 60 * 1000;
+type GiftExpiryTypeValue = "DAYS_AFTER_ISSUE" | "FIXED_DATE";
+type LineDeliveryTriggerTypeValue = "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
+type UserRoleValue = "staff";
 type CachedRank = {
   id: string;
   name: string;
@@ -138,12 +141,12 @@ function addDays(base: Date, days: number) {
 }
 
 function resolveGiftExpiryAt(gift: {
-  expiryType: GiftExpiryType;
+  expiryType: GiftExpiryTypeValue;
   expiryDays: number | null;
   expiryAt: Date | null;
 }) {
   const now = new Date();
-  if (gift.expiryType === GiftExpiryType.DAYS_AFTER_ISSUE) {
+  if (gift.expiryType === "DAYS_AFTER_ISSUE") {
     const days = gift.expiryDays ?? 0;
     if (days > 0) {
       return addDays(now, days);
@@ -264,6 +267,61 @@ async function issueGiftFromSetting(params: {
   return gift.title;
 }
 
+async function sendLineDeliveryTriggers(params: {
+  triggerType: LineDeliveryTriggerTypeValue;
+  officialAccountId: string | null;
+  targetUserId: string;
+}) {
+  try {
+    const settings = await prisma.lineDeliveryTriggerSetting.findMany({
+      where: {
+        triggerType: params.triggerType,
+        isActive: true,
+        ...(params.officialAccountId
+          ? { officialAccountId: params.officialAccountId }
+          : { officialAccountId: null }),
+      },
+      select: {
+        id: true,
+        title: true,
+        message: true,
+      },
+      take: 20,
+    });
+    if (settings.length === 0) {
+      return;
+    }
+
+    const { inngest } = await import("@/lib/inngest/client");
+    await Promise.allSettled(
+      settings.map((setting) =>
+        inngest.send({
+          name: "line/delivery.triggered",
+          data: {
+            title: setting.title,
+            notificationText: setting.message,
+            messages: [
+              {
+                type: "text",
+                text: setting.message,
+              },
+            ],
+            officialAccountId: params.officialAccountId,
+            targetUserIds: [params.targetUserId],
+            triggeredBy: `system:${params.triggerType.toLowerCase()}`,
+          },
+        }),
+      ),
+    );
+  } catch (error) {
+    console.error("[line-trigger-send-failed]", {
+      triggerType: params.triggerType,
+      targetUserId: params.targetUserId,
+      error,
+    });
+  }
+}
+
 type VisitGachaResult = {
   executed: boolean;
   won: boolean;
@@ -339,7 +397,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
 
   const now = new Date();
   let expiresAt: Date | null = null;
-  if (gift.expiryType === GiftExpiryType.DAYS_AFTER_ISSUE) {
+  if (gift.expiryType === "DAYS_AFTER_ISSUE") {
     const days = gift.expiryDays ?? 0;
     if (days > 0) {
       expiresAt = addDays(now, days);
@@ -435,7 +493,7 @@ type UpsertedLiffUserRow = {
   userId: string;
   points: number;
   nextRank: string;
-  role: UserRole | null;
+  role: UserRoleValue | null;
   lastCheckInAt: Date | null;
   surveyId: string | null;
 };
@@ -969,6 +1027,11 @@ export const appRouter = {
               dedupeValue: "signup",
             });
           }
+          await sendLineDeliveryTriggers({
+            triggerType: "USER_SIGNUP",
+            officialAccountId,
+            targetUserId: user.userId,
+          });
         }
 
         const elapsedMs = Date.now() - startedAt;
@@ -1024,7 +1087,7 @@ export const appRouter = {
         if (!user) {
           throw new Error("ユーザーが見つかりません。");
         }
-        if (user.role !== UserRole.staff || user.officialAccountId !== officialAccountId) {
+        if (user.role !== "staff" || user.officialAccountId !== officialAccountId) {
           return {
             ok: true,
             authorized: false,
@@ -1128,7 +1191,7 @@ export const appRouter = {
         if (!user) {
           throw new Error("ユーザーが見つかりません。");
         }
-        if (user.role !== UserRole.staff || user.officialAccountId !== officialAccountId) {
+        if (user.role !== "staff" || user.officialAccountId !== officialAccountId) {
           throw new Error("この操作を行う権限がありません。");
         }
 
@@ -1447,7 +1510,8 @@ export const appRouter = {
         }
 
         const currentRank = await resolveRankByPoints(updatedUser.points);
-        if (updatedUser.nextRank !== currentRank.id) {
+        const rankUpOccurred = updatedUser.nextRank !== currentRank.id;
+        if (rankUpOccurred) {
           await prisma.user.update({
             where: {
               userId: updatedUser.userId,
@@ -1580,6 +1644,19 @@ export const appRouter = {
                 NOW()
               )
           `;
+        }
+
+        await sendLineDeliveryTriggers({
+          triggerType: "CHECKIN_POINT_GRANTED",
+          officialAccountId,
+          targetUserId: updatedUser.userId,
+        });
+        if (rankUpOccurred) {
+          await sendLineDeliveryTriggers({
+            triggerType: "RANK_UP",
+            officialAccountId,
+            targetUserId: updatedUser.userId,
+          });
         }
 
         return {
