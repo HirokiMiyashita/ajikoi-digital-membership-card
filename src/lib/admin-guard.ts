@@ -7,6 +7,8 @@ import { prisma } from "@/lib/prisma";
 
 const ADMIN_USER_CACHE_TTL_MS = 5 * 60 * 1000;
 const adminUserCache = new Map<string, { user: AdminUser; expiresAt: number }>();
+const ADMIN_SESSION_CACHE_TTL_MS = 60 * 1000;
+const adminSessionCache = new Map<string, { adminId: string; expiresAt: number }>();
 
 function extractCookieValues(cookieHeader: string | null) {
   if (!cookieHeader) {
@@ -35,8 +37,14 @@ export async function requireAdminUser() {
   const startedAt = Date.now();
   const requestHeaders = await headers();
   const headersResolvedAt = Date.now();
+  const cookieHeader = requestHeaders.get("cookie") ?? "";
   let adminId: string | null = null;
-  const tokenCandidates = extractCookieValues(requestHeaders.get("cookie"));
+  const sessionCached = cookieHeader ? adminSessionCache.get(cookieHeader) : undefined;
+  const hasValidSessionCache = Boolean(sessionCached && sessionCached.expiresAt > Date.now());
+  if (hasValidSessionCache && sessionCached) {
+    adminId = sessionCached.adminId;
+  }
+  const tokenCandidates = extractCookieValues(cookieHeader);
   if (tokenCandidates.length > 0) {
     const fastSession = await prisma.adminAuthSession.findFirst({
       where: {
@@ -54,21 +62,29 @@ export async function requireAdminUser() {
         expiresAt: "desc",
       },
     });
-    adminId = fastSession?.user?.username ?? null;
+    adminId = adminId ?? fastSession?.user?.username ?? null;
   }
   let sessionResolvedAt = Date.now();
-  let usedFastPath = Boolean(adminId);
+  let sessionMode: "cookie-cache" | "cookie-db" | "better-auth" = hasValidSessionCache
+    ? "cookie-cache"
+    : "cookie-db";
   if (!adminId) {
     const session = await adminAuth.api.getSession({
       headers: requestHeaders,
     });
     sessionResolvedAt = Date.now();
     adminId = session?.user?.username ?? null;
-    usedFastPath = false;
+    sessionMode = "better-auth";
   }
 
   if (!adminId) {
     redirect("/admin/login");
+  }
+  if (cookieHeader) {
+    adminSessionCache.set(cookieHeader, {
+      adminId,
+      expiresAt: Date.now() + ADMIN_SESSION_CACHE_TTL_MS,
+    });
   }
 
   const cached = adminUserCache.get(adminId);
@@ -81,7 +97,7 @@ export async function requireAdminUser() {
         resolveHeaders: headersResolvedAt - startedAt,
         resolveSession: sessionResolvedAt - headersResolvedAt,
         resolveAdminUser: 0,
-        sessionMode: usedFastPath ? "cookie-db" : "better-auth",
+        sessionMode,
         adminCacheHit: true,
       });
     }
@@ -106,7 +122,7 @@ export async function requireAdminUser() {
       resolveHeaders: headersResolvedAt - startedAt,
       resolveSession: sessionResolvedAt - headersResolvedAt,
       resolveAdminUser: adminResolvedAt - sessionResolvedAt,
-      sessionMode: usedFastPath ? "cookie-db" : "better-auth",
+      sessionMode,
       adminCacheHit: false,
     });
   }
