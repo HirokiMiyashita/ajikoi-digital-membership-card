@@ -91,23 +91,39 @@ async function resolveOfficialAccountId() {
     };
     return null;
   }
+  const existing = await prisma.officialAccount.findUnique({
+    where: { lineBasicId },
+    select: { id: true },
+  });
+  if (existing?.id) {
+    officialAccountCache = {
+      id: existing.id,
+      expiresAt: now + OFFICIAL_ACCOUNT_CACHE_TTL_MS,
+    };
+    return existing.id;
+  }
 
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    WITH inserted AS (
-      INSERT INTO "official_accounts" ("id", "lineBasicId", "name", "updatedAt")
-      VALUES (md5(random()::text || clock_timestamp()::text), ${lineBasicId}, ${lineBasicId}, NOW())
-      ON CONFLICT ("lineBasicId") DO NOTHING
-      RETURNING "id"
-    )
-    SELECT "id" FROM inserted
-    UNION ALL
-    SELECT oa."id"
-    FROM "official_accounts" oa
-    WHERE oa."lineBasicId" = ${lineBasicId}
-    LIMIT 1
-  `;
+  let resolvedId: string | null = null;
+  try {
+    const created = await prisma.officialAccount.create({
+      data: {
+        lineBasicId,
+        name: lineBasicId,
+      },
+      select: { id: true },
+    });
+    resolvedId = created.id;
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
+      throw error;
+    }
+    const duplicated = await prisma.officialAccount.findUnique({
+      where: { lineBasicId },
+      select: { id: true },
+    });
+    resolvedId = duplicated?.id ?? null;
+  }
 
-  const resolvedId = rows[0]?.id ?? null;
   officialAccountCache = {
     id: resolvedId,
     expiresAt: now + OFFICIAL_ACCOUNT_CACHE_TTL_MS,

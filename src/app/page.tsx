@@ -206,7 +206,6 @@ export default function Home() {
         }
 
         const userProfile = await liff.getProfile();
-        const ownedGiftsPromise = fetchOwnedGifts(userProfile.userId);
         const profileFetchedAt = performance.now();
         const syncResult = await rpcClient.user.upsertFromLiff({
           userId: userProfile.userId,
@@ -266,8 +265,8 @@ export default function Home() {
           setToastMessage(`会員登録特典「${syncResult.signupGiftTitle}」を獲得しました。`);
           setTimeout(() => setToastMessage(null), 2600);
         }
-        // ギフト取得は upsertFromLiff と並列で先に開始しておく。
-        void ownedGiftsPromise;
+        // 初期同期の重いRPCが終わってからギフト一覧を取得する。
+        void fetchOwnedGifts(userProfile.userId);
         setIsProfileLoading(false);
         console.info("[liff-init-ms]", {
           importLiff: Math.round(importedAt - importStartedAt),

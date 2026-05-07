@@ -193,6 +193,7 @@ model UserGift {
   transferredTo        UserGift[] @relation("GiftTransfer")
 
   @@index([userId, isUsed])
+  @@index([userId, isUsed, expiresAt, issuedAt(sort: Desc), createdAt(sort: Desc)])
   @@index([giftId])
   @@index([expiresAt])
   @@map("user_gifts")
