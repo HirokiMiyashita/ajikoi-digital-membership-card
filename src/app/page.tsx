@@ -25,32 +25,83 @@ type OwnedGift = {
   expiresAt: string;
 };
 
-const surveySteps = ["gender", "visitFrequency", "companionType", "birthDate"] as const;
-type SurveyForm = {
-  gender: "male" | "female" | "other" | null;
-  visitFrequency: "1" | "2" | "3" | "4" | "5_plus" | null;
-  companionType: "alone" | "family" | "partner_or_friends" | "coworkers" | "other" | null;
-  birthDate: string;
+type SurveyQuestionConfig = {
+  id: string;
+  questionKey: string;
+  presetKey: "gender" | "visitFrequency" | "companionType" | "birthDate" | null;
+  questionType: "single_select" | "date" | "text";
+  label: string;
+  options: Array<{ value: string; label: string }>;
+  placeholder: string | null;
+  isEnabled: boolean;
+  isRequired: boolean;
+  sortOrder: number;
 };
-
-const genderOptions: Array<{ value: NonNullable<SurveyForm["gender"]>; label: string }> = [
-  { value: "male", label: "男性" },
-  { value: "female", label: "女性" },
-  { value: "other", label: "その他" },
-];
-const visitFrequencyOptions: Array<{ value: NonNullable<SurveyForm["visitFrequency"]>; label: string }> = [
-  { value: "1", label: "1回" },
-  { value: "2", label: "2回" },
-  { value: "3", label: "3回" },
-  { value: "4", label: "4回" },
-  { value: "5_plus", label: "5回以上" },
-];
-const companionOptions: Array<{ value: NonNullable<SurveyForm["companionType"]>; label: string }> = [
-  { value: "alone", label: "ひとり" },
-  { value: "family", label: "家族" },
-  { value: "partner_or_friends", label: "友人・パートナー" },
-  { value: "coworkers", label: "職場関係" },
-  { value: "other", label: "その他" },
+const defaultSurveyQuestions: SurveyQuestionConfig[] = [
+  {
+    id: "preset-gender",
+    questionKey: "gender",
+    presetKey: "gender",
+    questionType: "single_select",
+    label: "性別",
+    options: [
+      { value: "male", label: "男性" },
+      { value: "female", label: "女性" },
+      { value: "other", label: "その他" },
+    ],
+    placeholder: null,
+    isEnabled: true,
+    isRequired: true,
+    sortOrder: 0,
+  },
+  {
+    id: "preset-visitFrequency",
+    questionKey: "visitFrequency",
+    presetKey: "visitFrequency",
+    questionType: "single_select",
+    label: "来店回数(これまで来店した回数)",
+    options: [
+      { value: "1", label: "1回" },
+      { value: "2", label: "2回" },
+      { value: "3", label: "3回" },
+      { value: "4", label: "4回" },
+      { value: "5_plus", label: "5回以上" },
+    ],
+    placeholder: null,
+    isEnabled: true,
+    isRequired: true,
+    sortOrder: 1,
+  },
+  {
+    id: "preset-companionType",
+    questionKey: "companionType",
+    presetKey: "companionType",
+    questionType: "single_select",
+    label: "一緒に来店した人",
+    options: [
+      { value: "alone", label: "ひとり" },
+      { value: "family", label: "家族" },
+      { value: "partner_or_friends", label: "友人・パートナー" },
+      { value: "coworkers", label: "職場関係" },
+      { value: "other", label: "その他" },
+    ],
+    placeholder: null,
+    isEnabled: true,
+    isRequired: true,
+    sortOrder: 2,
+  },
+  {
+    id: "preset-birthDate",
+    questionKey: "birthDate",
+    presetKey: "birthDate",
+    questionType: "date",
+    label: "生年月日",
+    options: [],
+    placeholder: null,
+    isEnabled: true,
+    isRequired: true,
+    sortOrder: 3,
+  },
 ];
 
 function todayAsYmd() {
@@ -104,14 +155,10 @@ export default function Home() {
   });
   const [needsSurvey, setNeedsSurvey] = useState(false);
   const [surveyStep, setSurveyStep] = useState(0);
+  const [surveyQuestions, setSurveyQuestions] = useState<SurveyQuestionConfig[]>(defaultSurveyQuestions);
   const [isSubmittingSurvey, setIsSubmittingSurvey] = useState(false);
   const [surveyError, setSurveyError] = useState<string | null>(null);
-  const [surveyForm, setSurveyForm] = useState<SurveyForm>({
-    gender: null,
-    visitFrequency: null,
-    companionType: null,
-    birthDate: "",
-  });
+  const [surveyForm, setSurveyForm] = useState<Record<string, string>>({});
   const claimedGiftQueryRef = useRef<string | null>(null);
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
 
@@ -170,7 +217,17 @@ export default function Home() {
         setNextRankName(syncResult.nextRankName);
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
-        setNeedsSurvey(syncResult.role === "staff" ? false : !syncResult.hasSurvey);
+        const surveyConfigResult = await rpcClient.user.getOnboardingSurveyQuestions({});
+        const questions = surveyConfigResult.questions as SurveyQuestionConfig[];
+        const activeQuestions = questions
+          .filter((question: SurveyQuestionConfig) => question.isEnabled)
+          .sort((a: SurveyQuestionConfig, b: SurveyQuestionConfig) => a.sortOrder - b.sortOrder);
+        setSurveyQuestions(
+          questions.length > 0
+            ? questions
+            : defaultSurveyQuestions,
+        );
+        setNeedsSurvey(syncResult.role === "staff" ? false : activeQuestions.length > 0 && !syncResult.hasSurvey);
         const publicStoreStatus = await rpcClient.user.getStoreStatus({});
         setStoreIsOpen(publicStoreStatus.isOpen);
         if (syncResult.role === "staff") {
@@ -255,39 +312,41 @@ export default function Home() {
 
   const progressToNextRank =
     nextRankName === null ? 100 : Math.min(((points + pointsToNextRank) === 0 ? 0 : (points / (points + pointsToNextRank)) * 100), 100);
-  const surveyProgress = `${surveyStep + 1}/${surveySteps.length}`;
-  const surveyProgressPercent = ((surveyStep + 1) / surveySteps.length) * 100;
+  const surveySteps = surveyQuestions
+    .filter((question) => question.isEnabled)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+  const activeSurveyStep = Math.min(surveyStep, Math.max(surveySteps.length - 1, 0));
+  const currentSurveyQuestion = surveySteps[activeSurveyStep] ?? null;
+  const surveyProgress = `${Math.min(activeSurveyStep + 1, Math.max(surveySteps.length, 1))}/${Math.max(surveySteps.length, 1)}`;
+  const surveyProgressPercent = (Math.min(activeSurveyStep + 1, Math.max(surveySteps.length, 1)) / Math.max(surveySteps.length, 1)) * 100;
 
   const canProceedSurveyStep = (() => {
-    const stepKey = surveySteps[surveyStep];
-    if (stepKey === "gender") return surveyForm.gender !== null;
-    if (stepKey === "visitFrequency") return surveyForm.visitFrequency !== null;
-    if (stepKey === "companionType") return surveyForm.companionType !== null;
-    return surveyForm.birthDate.length > 0;
+    if (!currentSurveyQuestion) return true;
+    if (!currentSurveyQuestion.isRequired) return true;
+    const value = surveyForm[currentSurveyQuestion.questionKey] ?? "";
+    return value.trim().length > 0;
   })();
 
   const handleSurveyNext = async () => {
-    if (!profile || !canProceedSurveyStep) return;
+    if (!profile || !currentSurveyQuestion || !canProceedSurveyStep) return;
     setSurveyError(null);
 
-    if (surveyStep < surveySteps.length - 1) {
+    if (activeSurveyStep < surveySteps.length - 1) {
       setSurveyStep((prev) => prev + 1);
-      return;
-    }
-
-    if (!surveyForm.gender || !surveyForm.visitFrequency || !surveyForm.companionType || !surveyForm.birthDate) {
-      setSurveyError("入力内容をご確認ください。");
       return;
     }
 
     setIsSubmittingSurvey(true);
     try {
+      const answers = surveySteps
+        .map((question) => ({
+          questionKey: question.questionKey,
+          value: (surveyForm[question.questionKey] ?? "").trim(),
+        }))
+        .filter((answer) => answer.value.length > 0);
       await rpcClient.user.submitOnboardingSurvey({
         userId: profile.userId,
-        gender: surveyForm.gender,
-        visitFrequency: surveyForm.visitFrequency,
-        companionType: surveyForm.companionType,
-        birthDate: surveyForm.birthDate,
+        answers,
       });
       setNeedsSurvey(false);
       setScanMessage("アンケート回答ありがとうございました。");
@@ -687,7 +746,7 @@ export default function Home() {
       {selectedGift ? (
         <div className="fixed inset-0 z-57 flex items-center justify-center bg-black/35 px-6">
           <section className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-xl">
-            <div className="aspect-[4/3] w-full overflow-hidden bg-[#f3f4f6]">
+            <div className="aspect-4/3 w-full overflow-hidden bg-[#f3f4f6]">
               <img src={selectedGift.imageUrl} alt={selectedGift.title} className="h-full w-full object-contain" />
             </div>
             <div className="p-4">
@@ -752,22 +811,22 @@ export default function Home() {
             </div>
 
             <section className="mt-8">
-              <h2 className="text-center text-4xl font-bold tracking-tight">
-                {surveySteps[surveyStep] === "gender" ? "性別" : null}
-                {surveySteps[surveyStep] === "visitFrequency" ? "来店回数" : null}
-                {surveySteps[surveyStep] === "companionType" ? "一緒に来店した人" : null}
-                {surveySteps[surveyStep] === "birthDate" ? "生年月日" : null}
-              </h2>
+              <h2 className="text-center text-4xl font-bold tracking-tight">{currentSurveyQuestion?.label ?? "アンケート"}</h2>
 
               <div className="mt-8 space-y-3">
-                {surveySteps[surveyStep] === "gender"
-                  ? genderOptions.map((option) => (
+                {currentSurveyQuestion?.questionType === "single_select"
+                  ? currentSurveyQuestion.options.map((option) => (
                       <button
                         key={option.value}
                         type="button"
-                        onClick={() => setSurveyForm((prev) => ({ ...prev, gender: option.value }))}
+                        onClick={() =>
+                          setSurveyForm((prev) => ({
+                            ...prev,
+                            [currentSurveyQuestion.questionKey]: option.value,
+                          }))
+                        }
                         className={`w-full rounded-lg border px-4 py-4 text-left text-2xl font-semibold ${
-                          surveyForm.gender === option.value
+                          (surveyForm[currentSurveyQuestion.questionKey] ?? "") === option.value
                             ? "border-[#14b8a6] bg-[#d5e8e8] text-[#0f172a]"
                             : "border-[#d1d5db] bg-white text-[#1f2937]"
                         }`}
@@ -777,49 +836,37 @@ export default function Home() {
                     ))
                   : null}
 
-                {surveySteps[surveyStep] === "visitFrequency"
-                  ? visitFrequencyOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setSurveyForm((prev) => ({ ...prev, visitFrequency: option.value }))}
-                        className={`w-full rounded-lg border px-4 py-4 text-left text-2xl font-semibold ${
-                          surveyForm.visitFrequency === option.value
-                            ? "border-[#14b8a6] bg-[#d5e8e8] text-[#0f172a]"
-                            : "border-[#d1d5db] bg-white text-[#1f2937]"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))
-                  : null}
-
-                {surveySteps[surveyStep] === "companionType"
-                  ? companionOptions.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setSurveyForm((prev) => ({ ...prev, companionType: option.value }))}
-                        className={`w-full rounded-lg border px-4 py-4 text-left text-2xl font-semibold ${
-                          surveyForm.companionType === option.value
-                            ? "border-[#14b8a6] bg-[#d5e8e8] text-[#0f172a]"
-                            : "border-[#d1d5db] bg-white text-[#1f2937]"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))
-                  : null}
-
-                {surveySteps[surveyStep] === "birthDate" ? (
+                {currentSurveyQuestion?.questionType === "date" ? (
                   <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
                     <span className="mb-2 block text-sm font-semibold text-[#64748b]">生年月日を選択</span>
                     <input
                       type="date"
                       max={todayAsYmd()}
-                      value={surveyForm.birthDate}
-                      onChange={(event) => setSurveyForm((prev) => ({ ...prev, birthDate: event.target.value }))}
+                      value={surveyForm[currentSurveyQuestion.questionKey] ?? ""}
+                      onChange={(event) =>
+                        setSurveyForm((prev) => ({
+                          ...prev,
+                          [currentSurveyQuestion.questionKey]: event.target.value,
+                        }))
+                      }
                       className="w-full bg-transparent text-2xl font-semibold outline-none"
+                    />
+                  </label>
+                ) : null}
+
+                {currentSurveyQuestion?.questionType === "text" ? (
+                  <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
+                    <span className="mb-2 block text-sm font-semibold text-[#64748b]">{currentSurveyQuestion.label}</span>
+                    <textarea
+                      value={surveyForm[currentSurveyQuestion.questionKey] ?? ""}
+                      onChange={(event) =>
+                        setSurveyForm((prev) => ({
+                          ...prev,
+                          [currentSurveyQuestion.questionKey]: event.target.value,
+                        }))
+                      }
+                      placeholder={currentSurveyQuestion.placeholder ?? "自由に入力してください"}
+                      className="min-h-24 w-full resize-y bg-transparent text-lg font-semibold outline-none"
                     />
                   </label>
                 ) : null}
@@ -832,7 +879,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleSurveyBack}
-                disabled={surveyStep === 0 || isSubmittingSurvey}
+                disabled={activeSurveyStep === 0 || isSubmittingSurvey}
                 className="w-1/3 rounded-lg border border-[#cbd5e1] bg-white py-3 text-sm font-bold text-[#334155] disabled:opacity-40"
               >
                 戻る
@@ -843,7 +890,7 @@ export default function Home() {
                 disabled={!canProceedSurveyStep || isSubmittingSurvey}
                 className="w-2/3 rounded-lg bg-[#0f9f99] py-3 text-base font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
               >
-                {surveyStep === surveySteps.length - 1
+                {activeSurveyStep === surveySteps.length - 1
                   ? isSubmittingSurvey
                     ? "送信中..."
                     : "送信"

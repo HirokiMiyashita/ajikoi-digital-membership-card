@@ -14,6 +14,8 @@ export default async function AdminMembersPage() {
         userId: true,
         displayName: true,
         role: true,
+        createdAt: true,
+        lastCheckInAt: true,
         _count: {
           select: {
             checkIns: true,
@@ -64,6 +66,8 @@ export default async function AdminMembersPage() {
         role: row.role,
         checkInCount: row._count.checkIns,
         rankName: row.rank.name,
+        registeredAt: row.createdAt.toISOString(),
+        lastVisitedAt: row.lastCheckInAt ? row.lastCheckInAt.toISOString() : null,
         assignedOfficialAccountId: row.storeOperationPermissions[0]?.officialAccountId ?? null,
       }))}
     />

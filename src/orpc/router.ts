@@ -2,7 +2,20 @@ import { os } from "@orpc/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
+import {
+  ONBOARDING_SURVEY_PRESETS,
+  type OnboardingSurveyOption,
+  type OnboardingSurveyPresetKey,
+  type OnboardingSurveyQuestionType,
+  getOnboardingSurveyPresetByPresetKey,
+} from "@/lib/onboarding-survey";
 import { prisma } from "@/lib/prisma";
+const prismaUnsafe = prisma as unknown as {
+  onboardingSurveyQuestionSetting: {
+    upsert: (args: unknown) => Promise<unknown>;
+    findMany: (args: unknown) => Promise<unknown[]>;
+  };
+};
 
 const OFFICIAL_ACCOUNT_CACHE_TTL_MS = 5 * 60 * 1000;
 let officialAccountCache: { id: string | null; expiresAt: number } | null = null;
@@ -17,6 +30,19 @@ type CachedRank = {
   maxPoints: number;
 };
 let rankCache: { ranks: CachedRank[]; expiresAt: number } | null = null;
+
+type OnboardingSurveySettingRow = {
+  id: string;
+  questionKey: string;
+  presetKey: OnboardingSurveyPresetKey | null;
+  questionType: OnboardingSurveyQuestionType;
+  label: string;
+  options: OnboardingSurveyOption[];
+  placeholder: string | null;
+  isEnabled: boolean;
+  isRequired: boolean;
+  sortOrder: number;
+};
 
 function matchesVisitQrToken(qrValue: string, expectedToken: string) {
   if (qrValue === expectedToken) {
@@ -86,6 +112,87 @@ async function resolveOfficialAccountId() {
     expiresAt: now + OFFICIAL_ACCOUNT_CACHE_TTL_MS,
   };
   return resolvedId;
+}
+
+async function ensureOnboardingSurveySettings(officialAccountId: string | null) {
+  const scopeKey = officialAccountId ?? "global";
+  await prisma.$transaction(async () => {
+    for (let index = 0; index < ONBOARDING_SURVEY_PRESETS.length; index += 1) {
+      const preset = ONBOARDING_SURVEY_PRESETS[index];
+      await prismaUnsafe.onboardingSurveyQuestionSetting.upsert({
+        where: {
+          scopeKey_questionKey: {
+            scopeKey,
+            questionKey: preset.questionKey,
+          },
+        },
+        create: {
+          scopeKey,
+          officialAccountId,
+          questionKey: preset.questionKey,
+          presetKey: preset.presetKey,
+          questionType: preset.type,
+          label: preset.label,
+          options: preset.options,
+          placeholder: preset.placeholder,
+          isEnabled: preset.defaultEnabled,
+          isRequired: preset.defaultRequired,
+          sortOrder: index,
+        },
+        update: {},
+      });
+    }
+  });
+  const rows = (await prismaUnsafe.onboardingSurveyQuestionSetting.findMany({
+    where: { scopeKey },
+    orderBy: { sortOrder: "asc" },
+    select: {
+      id: true,
+      questionKey: true,
+      presetKey: true,
+      questionType: true,
+      label: true,
+      options: true,
+      placeholder: true,
+      isEnabled: true,
+      isRequired: true,
+      sortOrder: true,
+    },
+  })) as Array<{
+    id: string;
+    questionKey: string;
+    presetKey: OnboardingSurveyPresetKey | null;
+    questionType: OnboardingSurveyQuestionType;
+    label: string;
+    options: unknown;
+    placeholder: string | null;
+    isEnabled: boolean;
+    isRequired: boolean;
+    sortOrder: number;
+  }>;
+  return rows.map((row: {
+    id: string;
+    questionKey: string;
+    presetKey: OnboardingSurveyPresetKey | null;
+    questionType: OnboardingSurveyQuestionType;
+    label: string;
+    options: unknown;
+    placeholder: string | null;
+    isEnabled: boolean;
+    isRequired: boolean;
+    sortOrder: number;
+  }) => ({
+    id: row.id,
+    questionKey: row.questionKey,
+    presetKey: row.presetKey,
+    questionType: row.questionType,
+    label: row.label,
+    options: Array.isArray(row.options) ? (row.options as OnboardingSurveyOption[]) : [],
+    placeholder: row.placeholder,
+    isEnabled: row.isEnabled,
+    isRequired: row.isRequired,
+    sortOrder: row.sortOrder,
+  }));
 }
 
 async function getCachedRanks() {
@@ -1237,49 +1344,141 @@ export const appRouter = {
           isOpen: status.isOpen,
         };
       }),
+    getOnboardingSurveyQuestions: os
+      .input(z.object({}))
+      .handler(async () => {
+        const officialAccountId = await resolveOfficialAccountId();
+        const rows = await ensureOnboardingSurveySettings(officialAccountId);
+        return {
+          ok: true,
+          questions: rows
+            .slice()
+            .sort((a: OnboardingSurveySettingRow, b: OnboardingSurveySettingRow) => a.sortOrder - b.sortOrder)
+            .map((row: OnboardingSurveySettingRow) => ({
+              id: row.id,
+              questionKey: row.questionKey,
+              presetKey: row.presetKey,
+              questionType: row.questionType,
+              label: row.label,
+              options: row.options,
+              placeholder: row.placeholder,
+              isEnabled: row.isEnabled,
+              isRequired: row.isRequired,
+              sortOrder: row.sortOrder,
+            })),
+        };
+      }),
     submitOnboardingSurvey: os
       .input(
         z.object({
           userId: z.string().min(1),
-          gender: z.enum(["male", "female", "other"]),
-          visitFrequency: z.enum(["1", "2", "3", "4", "5_plus"]),
-          companionType: z.enum(["alone", "family", "partner_or_friends", "coworkers", "other"]),
-          birthDate: z.string().min(1),
+          answers: z.array(
+            z.object({
+              questionKey: z.string().min(1),
+              value: z.string().min(1),
+            }),
+          ),
         }),
       )
       .handler(async ({ input }) => {
-        const parsedBirthDate = new Date(input.birthDate);
-        if (Number.isNaN(parsedBirthDate.getTime())) {
-          throw new Error("生年月日の形式が不正です。");
-        }
-
         const existingUser = await prisma.user.findUnique({
           where: { userId: input.userId },
-          select: { surveyId: true },
+          select: { surveyId: true, officialAccountId: true },
         });
         if (!existingUser) {
           throw new Error("ユーザーが見つかりません。");
         }
 
+        const settings = await ensureOnboardingSurveySettings(existingUser.officialAccountId ?? null);
+        const enabledSettings = settings.filter((row: OnboardingSurveySettingRow) => row.isEnabled);
+        const answerByQuestionKey = new Map(input.answers.map((answer) => [answer.questionKey, answer.value.trim()]));
+        for (const questionKey of answerByQuestionKey.keys()) {
+          if (!enabledSettings.some((row: OnboardingSurveySettingRow) => row.questionKey === questionKey)) {
+            throw new Error("無効な質問が送信されました。");
+          }
+        }
+
+        for (const row of enabledSettings) {
+          const value = answerByQuestionKey.get(row.questionKey) ?? "";
+          if (row.isRequired && value.length === 0) {
+            throw new Error(`「${row.label}」は必須です。`);
+          }
+        }
+
+        type ParsedSurveyAnswer = {
+          row: OnboardingSurveySettingRow;
+          valueOption: string | null;
+          valueText: string | null;
+          valueDate: Date | null;
+        };
+        const parsedAnswers: ParsedSurveyAnswer[] = enabledSettings.flatMap((row) => {
+          const value = answerByQuestionKey.get(row.questionKey) ?? "";
+          if (value.length === 0) {
+            return [];
+          }
+          if (row.questionType === "single_select") {
+            const options = row.options ?? [];
+            const matched = options.find((option: OnboardingSurveyOption) => option.value === value);
+            if (!matched) {
+              throw new Error(`「${row.label}」の選択肢が不正です。`);
+            }
+            const answer: ParsedSurveyAnswer = {
+              row,
+              valueOption: matched.value,
+              valueText: matched.label,
+              valueDate: null,
+            };
+            return [answer];
+          }
+          if (row.questionType === "date") {
+            const parsed = new Date(value);
+            if (Number.isNaN(parsed.getTime())) {
+              throw new Error(`「${row.label}」の日付形式が不正です。`);
+            }
+            const answer: ParsedSurveyAnswer = {
+              row,
+              valueOption: null,
+              valueText: null,
+              valueDate: parsed,
+            };
+            return [answer];
+          }
+          const answer: ParsedSurveyAnswer = {
+            row,
+            valueOption: null,
+            valueText: value,
+            valueDate: null,
+          };
+          return [answer];
+        });
+
+        const getPresetValue = (presetKey: OnboardingSurveyPresetKey) => {
+          const preset = getOnboardingSurveyPresetByPresetKey(presetKey);
+          if (!preset) return null;
+          return answerByQuestionKey.get(preset.questionKey) ?? null;
+        };
+        const birthDateRaw = getPresetValue("birthDate");
+        const parsedBirthDate = birthDateRaw ? new Date(birthDateRaw) : null;
+        if (birthDateRaw && (!parsedBirthDate || Number.isNaN(parsedBirthDate.getTime()))) {
+          throw new Error("生年月日の形式が不正です。");
+        }
+
+        const surveyPayload = {
+          gender: getPresetValue("gender"),
+          visitFrequency: getPresetValue("visitFrequency"),
+          companionType: getPresetValue("companionType"),
+          birthDate: parsedBirthDate,
+        };
+
         let surveyId = existingUser.surveyId;
         if (surveyId) {
           await prisma.userSurvey.update({
             where: { id: surveyId },
-            data: {
-              gender: input.gender,
-              visitFrequency: input.visitFrequency,
-              companionType: input.companionType,
-              birthDate: parsedBirthDate,
-            },
+            data: surveyPayload as never,
           });
         } else {
           const created = await prisma.userSurvey.create({
-            data: {
-              gender: input.gender,
-              visitFrequency: input.visitFrequency,
-              companionType: input.companionType,
-              birthDate: parsedBirthDate,
-            },
+            data: surveyPayload as never,
           });
           surveyId = created.id;
           await prisma.user.update({
@@ -1287,6 +1486,33 @@ export const appRouter = {
             data: { surveyId },
           });
         }
+
+        if (!surveyId) {
+          throw new Error("アンケート保存に失敗しました。");
+        }
+        await prisma.$transaction(async (tx) => {
+          const txUnsafe = tx as unknown as {
+            onboardingSurveyAnswer: {
+              deleteMany: (args: unknown) => Promise<unknown>;
+              createMany: (args: unknown) => Promise<unknown>;
+            };
+          };
+          await txUnsafe.onboardingSurveyAnswer.deleteMany({
+            where: { surveyId },
+          });
+          if (parsedAnswers.length > 0) {
+            await txUnsafe.onboardingSurveyAnswer.createMany({
+              data: parsedAnswers.map((answer) => ({
+                surveyId,
+                questionId: answer.row.id,
+                questionKey: answer.row.questionKey,
+                valueOption: answer.valueOption,
+                valueText: answer.valueText,
+                valueDate: answer.valueDate,
+              })),
+            });
+          }
+        });
 
         return {
           ok: true,

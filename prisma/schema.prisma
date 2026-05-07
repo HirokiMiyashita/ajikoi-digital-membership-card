@@ -37,15 +37,72 @@ enum UserRole {
 
 model UserSurvey {
   id                 String   @id @default(cuid())
-  gender             String
-  visitFrequency     String
-  companionType      String
-  birthDate          DateTime
+  gender             String?
+  visitFrequency     String?
+  companionType      String?
+  birthDate          DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   users              User[]
+  onboardingSurveyAnswers OnboardingSurveyAnswer[]
 
   @@map("user_surveys")
+}
+
+enum OnboardingSurveyQuestionType {
+  single_select
+  date
+  text
+}
+
+enum OnboardingSurveyPresetKey {
+  gender
+  visitFrequency
+  companionType
+  birthDate
+}
+
+model OnboardingSurveyQuestionSetting {
+  id                String                     @id @default(cuid())
+  scopeKey          String
+  officialAccountId String?
+  questionKey       String
+  presetKey         OnboardingSurveyPresetKey?
+  questionType      OnboardingSurveyQuestionType
+  label             String
+  options           Json?
+  placeholder       String?
+  isEnabled         Boolean                    @default(true)
+  isRequired        Boolean                    @default(true)
+  sortOrder         Int
+  officialAccount   OfficialAccount?           @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
+  answers           OnboardingSurveyAnswer[]
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+
+  @@unique([scopeKey, questionKey])
+  @@index([scopeKey, presetKey])
+  @@index([officialAccountId])
+  @@index([scopeKey, sortOrder])
+  @@map("onboarding_survey_question_settings")
+}
+
+model OnboardingSurveyAnswer {
+  id          String                          @id @default(cuid())
+  surveyId    String
+  questionId  String
+  questionKey String
+  valueText   String?
+  valueOption String?
+  valueDate   DateTime?
+  survey      UserSurvey                      @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  question    OnboardingSurveyQuestionSetting @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  createdAt   DateTime                        @default(now())
+  updatedAt   DateTime                        @updatedAt
+
+  @@unique([surveyId, questionId])
+  @@index([questionKey])
+  @@map("onboarding_survey_answers")
 }
 
 enum GiftExpiryType {
@@ -170,6 +227,7 @@ model OfficialAccount {
   name          String?
   users         User[]
   adminUsers    AdminUser[]
+  onboardingSurveyQuestionSettings OnboardingSurveyQuestionSetting[]
   userHistories UserHistory[]
   checkIns      UserCheckIn[]
   visitGachaSettings VisitGachaSetting[]
