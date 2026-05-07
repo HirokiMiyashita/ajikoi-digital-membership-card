@@ -10,22 +10,45 @@ type DeliveryHistoryRow = {
   sent: number;
   failed: number;
 };
+type TriggerSettingRow = {
+  id: string;
+  title: string;
+  triggerType: "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
+  message: string;
+  isActive: boolean;
+  updatedAt: string;
+};
 
 export default async function AdminSpotDeliveryPage() {
   const adminUser = await requireAdminUser();
-  const histories = await prisma.userHistory.findMany({
-    where: {
-      action: "line_trigger_delivery_executed",
-      ...(adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : {}),
-    },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      createdAt: true,
-      metadata: true,
-    },
-    take: 50,
-  });
+  const [histories, triggerSettings] = await Promise.all([
+    prisma.userHistory.findMany({
+      where: {
+        action: "line_trigger_delivery_executed",
+        ...(adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        createdAt: true,
+        metadata: true,
+      },
+      take: 50,
+    }),
+    prisma.lineDeliveryTriggerSetting.findMany({
+      where: adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : undefined,
+      orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
+      select: {
+        id: true,
+        title: true,
+        triggerType: true,
+        message: true,
+        isActive: true,
+        updatedAt: true,
+      },
+      take: 100,
+    }),
+  ]);
 
   const deliveryHistory: DeliveryHistoryRow[] = histories.map((row) => {
     const metadata = (row.metadata ?? {}) as Record<string, unknown>;
@@ -43,5 +66,17 @@ export default async function AdminSpotDeliveryPage() {
     };
   });
 
-  return <SpotDeliveryClient deliveryHistory={deliveryHistory} />;
+  return (
+    <SpotDeliveryClient
+      deliveryHistory={deliveryHistory}
+      triggerSettings={triggerSettings.map((row) => ({
+        id: row.id,
+        title: row.title,
+        triggerType: row.triggerType,
+        message: row.message,
+        isActive: row.isActive,
+        updatedAt: row.updatedAt.toISOString(),
+      }))}
+    />
+  );
 }

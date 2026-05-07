@@ -24,6 +24,7 @@ type MembersClientProps = {
 export default function MembersClient({ initialMembers, officialAccounts }: MembersClientProps) {
   const [members, setMembers] = useState(initialMembers);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [dialogUser, setDialogUser] = useState<MemberRow | null>(null);
   const [dialogRole, setDialogRole] = useState<"staff" | null>(null);
   const [dialogOfficialAccountId, setDialogOfficialAccountId] = useState<string>("");
@@ -39,6 +40,18 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
   const closeDialog = () => {
     setDialogUser(null);
   };
+
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredMembers =
+    normalizedQuery.length === 0
+      ? members
+      : members.filter((member) => {
+          return (
+            member.displayName.toLowerCase().includes(normalizedQuery) ||
+            member.userId.toLowerCase().includes(normalizedQuery) ||
+            member.rankName.toLowerCase().includes(normalizedQuery)
+          );
+        });
 
   const handleRoleChange = async (
     userId: string,
@@ -89,7 +102,16 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
     <div className="space-y-4 p-4">
       <div className="mx-auto flex w-[90%] items-end justify-between">
         <h1 className="text-xl font-bold">会員情報</h1>
-        <p className="text-sm text-[#64748b]">全{members.length}件</p>
+        <p className="text-sm text-[#64748b]">全{filteredMembers.length}件</p>
+      </div>
+      <div className="mx-auto w-[90%]">
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
+          placeholder="会員名 / userId / ランクで検索"
+          className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-sm text-[#0f172a] shadow-sm outline-none focus:border-[#0f766e]"
+        />
       </div>
       <section className="mx-auto w-[90%] overflow-hidden rounded-xl border border-[#dbe2ea] bg-white shadow-sm">
         <div className="grid grid-cols-[1fr_auto_auto_auto] border-b border-[#e2e8f0] bg-[#f8fafc] px-4 py-3 text-sm font-bold text-[#334155]">
@@ -98,45 +120,49 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
           <p className="px-2">来店数</p>
           <p className="px-2">スタッフ設定</p>
         </div>
-        {members.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-[#64748b]">会員データがありません。</p>
-        ) : (
-          members.map((row) => (
-            <div
-              key={row.userId}
-              className="grid grid-cols-[1fr_auto_auto_auto] items-center border-b border-[#f1f5f9] px-4 py-3 text-sm text-[#0f172a] last:border-b-0"
-            >
-              <div className="min-w-0">
-                <p className="truncate">{row.displayName}</p>
-                <p className="truncate text-xs text-[#94a3b8]">{row.userId}</p>
-              </div>
-              <p className="px-2">{row.rankName}</p>
-              <p className="px-2 text-right font-semibold">{row.checkInCount}回</p>
-              <div className="flex gap-2 px-2">
-                <button
-                  type="button"
-                  disabled={updatingUserId === row.userId}
-                  onClick={() => openStaffDialog(row)}
-                  className="rounded bg-[#0f766e] px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
-                >
-                  {row.role === "staff" ? "スタッフ設定" : "スタッフにする"}
-                </button>
-                {row.role === "staff" ? (
+        <div className="max-h-[70vh] overflow-y-auto">
+          {filteredMembers.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-[#64748b]">
+              {searchQuery.trim().length > 0 ? "一致する会員が見つかりません。" : "会員データがありません。"}
+            </p>
+          ) : (
+            filteredMembers.map((row) => (
+              <div
+                key={row.userId}
+                className="grid grid-cols-[1fr_auto_auto_auto] items-center border-b border-[#f1f5f9] px-4 py-3 text-sm text-[#0f172a] last:border-b-0"
+              >
+                <div className="min-w-0">
+                  <p className="truncate">{row.displayName}</p>
+                  <p className="truncate text-xs text-[#94a3b8]">{row.userId}</p>
+                </div>
+                <p className="px-2">{row.rankName}</p>
+                <p className="px-2 text-right font-semibold">{row.checkInCount}回</p>
+                <div className="flex gap-2 px-2">
                   <button
                     type="button"
                     disabled={updatingUserId === row.userId}
-                    onClick={() => {
-                      void handleRoleChange(row.userId, null, null);
-                    }}
-                    className="rounded border border-[#cbd5e1] bg-white px-3 py-1 text-xs font-semibold text-[#334155] disabled:opacity-50"
+                    onClick={() => openStaffDialog(row)}
+                    className="rounded bg-[#0f766e] px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
                   >
-                    解除
+                    {row.role === "staff" ? "スタッフ設定" : "スタッフにする"}
                   </button>
-                ) : null}
+                  {row.role === "staff" ? (
+                    <button
+                      type="button"
+                      disabled={updatingUserId === row.userId}
+                      onClick={() => {
+                        void handleRoleChange(row.userId, null, null);
+                      }}
+                      className="rounded border border-[#cbd5e1] bg-white px-3 py-1 text-xs font-semibold text-[#334155] disabled:opacity-50"
+                    >
+                      解除
+                    </button>
+                  ) : null}
+                </div>
               </div>
-            </div>
-          ))
-        )}
+            ))
+          )}
+        </div>
       </section>
       {dialogUser ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">

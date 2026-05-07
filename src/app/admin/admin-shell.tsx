@@ -6,7 +6,7 @@ import { MdFace, MdInsertChart, MdMenu, MdSend } from "react-icons/md";
 
 const navItems = [
   { href: "/admin/report", label: "レポート", icon: MdInsertChart },
-  { href: "/admin/spot-delivery", label: "スポット配信", icon: MdSend },
+  { href: "/admin/spot-delivery", label: "LINE配信", icon: MdSend },
   { href: "/admin/members", label: "会員情報", icon: MdFace },
   { href: "/admin/menu", label: "メニュー", icon: MdMenu },
 ];
