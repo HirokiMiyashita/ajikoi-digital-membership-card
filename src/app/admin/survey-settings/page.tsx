@@ -29,33 +29,31 @@ type SurveySettingRow = {
 
 async function ensureSurveySettings(officialAccountId: string | null) {
   const scopeKey = officialAccountId ?? "global";
-  await prisma.$transaction(async () => {
-    for (let index = 0; index < ONBOARDING_SURVEY_PRESETS.length; index += 1) {
-      const preset = ONBOARDING_SURVEY_PRESETS[index];
-      await prismaUnsafe.onboardingSurveyQuestionSetting.upsert({
-        where: {
-          scopeKey_questionKey: {
-            scopeKey,
-            questionKey: preset.questionKey,
-          },
-        },
-        create: {
+  for (let index = 0; index < ONBOARDING_SURVEY_PRESETS.length; index += 1) {
+    const preset = ONBOARDING_SURVEY_PRESETS[index];
+    await prismaUnsafe.onboardingSurveyQuestionSetting.upsert({
+      where: {
+        scopeKey_questionKey: {
           scopeKey,
-          officialAccountId,
           questionKey: preset.questionKey,
-          presetKey: preset.presetKey,
-          questionType: preset.type,
-          label: preset.label,
-          options: preset.options,
-          placeholder: preset.placeholder,
-          isEnabled: preset.defaultEnabled,
-          isRequired: preset.defaultRequired,
-          sortOrder: index,
         },
-        update: {},
-      });
-    }
-  });
+      },
+      create: {
+        scopeKey,
+        officialAccountId,
+        questionKey: preset.questionKey,
+        presetKey: preset.presetKey,
+        questionType: preset.type,
+        label: preset.label,
+        options: preset.options,
+        placeholder: preset.placeholder,
+        isEnabled: preset.defaultEnabled,
+        isRequired: preset.defaultRequired,
+        sortOrder: index,
+      },
+      update: {},
+    });
+  }
 
   const rows = (await prismaUnsafe.onboardingSurveyQuestionSetting.findMany({
     where: { scopeKey },

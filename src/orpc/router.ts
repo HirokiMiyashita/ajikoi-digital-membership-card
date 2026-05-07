@@ -116,33 +116,31 @@ async function resolveOfficialAccountId() {
 
 async function ensureOnboardingSurveySettings(officialAccountId: string | null) {
   const scopeKey = officialAccountId ?? "global";
-  await prisma.$transaction(async () => {
-    for (let index = 0; index < ONBOARDING_SURVEY_PRESETS.length; index += 1) {
-      const preset = ONBOARDING_SURVEY_PRESETS[index];
-      await prismaUnsafe.onboardingSurveyQuestionSetting.upsert({
-        where: {
-          scopeKey_questionKey: {
-            scopeKey,
-            questionKey: preset.questionKey,
-          },
-        },
-        create: {
+  for (let index = 0; index < ONBOARDING_SURVEY_PRESETS.length; index += 1) {
+    const preset = ONBOARDING_SURVEY_PRESETS[index];
+    await prismaUnsafe.onboardingSurveyQuestionSetting.upsert({
+      where: {
+        scopeKey_questionKey: {
           scopeKey,
-          officialAccountId,
           questionKey: preset.questionKey,
-          presetKey: preset.presetKey,
-          questionType: preset.type,
-          label: preset.label,
-          options: preset.options,
-          placeholder: preset.placeholder,
-          isEnabled: preset.defaultEnabled,
-          isRequired: preset.defaultRequired,
-          sortOrder: index,
         },
-        update: {},
-      });
-    }
-  });
+      },
+      create: {
+        scopeKey,
+        officialAccountId,
+        questionKey: preset.questionKey,
+        presetKey: preset.presetKey,
+        questionType: preset.type,
+        label: preset.label,
+        options: preset.options,
+        placeholder: preset.placeholder,
+        isEnabled: preset.defaultEnabled,
+        isRequired: preset.defaultRequired,
+        sortOrder: index,
+      },
+      update: {},
+    });
+  }
   const rows = (await prismaUnsafe.onboardingSurveyQuestionSetting.findMany({
     where: { scopeKey },
     orderBy: { sortOrder: "asc" },
@@ -1850,7 +1848,14 @@ export const appRouter = {
           }
         }
 
-        const gacha = await runVisitGacha(updatedUser.userId, officialAccountId);
+        const gacha = isFirstVisit
+          ? {
+              executed: false,
+              won: false,
+              winProbability: 0,
+              giftTitle: null,
+            }
+          : await runVisitGacha(updatedUser.userId, officialAccountId);
         if (gacha.executed) {
           await prisma.$executeRaw`
             INSERT INTO "user_history"

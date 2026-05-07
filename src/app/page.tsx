@@ -163,7 +163,12 @@ export default function Home() {
   const [surveyForm, setSurveyForm] = useState<Record<string, string>>({});
   const claimedGiftQueryRef = useRef<string | null>(null);
   const autoCheckinTokenRef = useRef<string | null>(null);
+  const pendingSurveyRef = useRef(false);
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+
+  useEffect(() => {
+    pendingSurveyRef.current = pendingSurvey;
+  }, [pendingSurvey]);
 
   const fetchOwnedGifts = async (userId: string) => {
     try {
@@ -336,7 +341,7 @@ export default function Home() {
         setIsAutoCheckinProcessing(false);
         url.searchParams.delete("checkinToken");
         window.history.replaceState({}, "", url.toString());
-        setNeedsSurvey(pendingSurvey);
+        setNeedsSurvey(pendingSurveyRef.current);
       }
     };
 
