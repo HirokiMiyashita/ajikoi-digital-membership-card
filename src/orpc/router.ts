@@ -1292,17 +1292,18 @@ export const appRouter = {
           };
         }
 
-        const status = await prisma.storeStatus.upsert({
+        const existingStatus = await prisma.storeStatus.findUnique({
           where: { officialAccountId },
-          create: {
-            officialAccountId,
-            isOpen: false,
-          },
-          update: {},
-          select: {
-            isOpen: true,
-          },
+          select: { isOpen: true },
         });
+        const status = existingStatus
+          ?? (await prisma.storeStatus.create({
+            data: {
+              officialAccountId,
+              isOpen: false,
+            },
+            select: { isOpen: true },
+          }));
 
         return {
           ok: true,
@@ -1323,17 +1324,18 @@ export const appRouter = {
           };
         }
 
-        const status = await prisma.storeStatus.upsert({
+        const existingStatus = await prisma.storeStatus.findUnique({
           where: { officialAccountId },
-          create: {
-            officialAccountId,
-            isOpen: false,
-          },
-          update: {},
-          select: {
-            isOpen: true,
-          },
+          select: { isOpen: true },
         });
+        const status = existingStatus
+          ?? (await prisma.storeStatus.create({
+            data: {
+              officialAccountId,
+              isOpen: false,
+            },
+            select: { isOpen: true },
+          }));
 
         return {
           ok: true,

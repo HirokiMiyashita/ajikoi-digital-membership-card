@@ -223,6 +223,7 @@ export default function Home() {
         setNextRankName(syncResult.nextRankName);
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
+        const publicStoreStatusPromise = rpcClient.user.getStoreStatus({});
 
         if (syncResult.role === "staff") {
           setPendingSurvey(false);
@@ -242,8 +243,6 @@ export default function Home() {
           setPendingSurvey(activeQuestions.length > 0);
         }
         setNeedsSurvey(false);
-        const publicStoreStatus = await rpcClient.user.getStoreStatus({});
-        setStoreIsOpen(publicStoreStatus.isOpen);
         if (syncResult.role === "staff") {
           const staffStatus = await rpcClient.user.getStaffStoreStatus({
             userId: userProfile.userId,
@@ -268,6 +267,17 @@ export default function Home() {
         // 初期同期の重いRPCが終わってからギフト一覧を取得する。
         void fetchOwnedGifts(userProfile.userId);
         setIsProfileLoading(false);
+        void publicStoreStatusPromise
+          .then((publicStoreStatus) => {
+            if (!cancelled) {
+              setStoreIsOpen(publicStoreStatus.isOpen);
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setStoreIsOpen(false);
+            }
+          });
         console.info("[liff-init-ms]", {
           importLiff: Math.round(importedAt - importStartedAt),
           liffInit: Math.round(initializedAt - importedAt),
