@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { MdFace, MdInsertChart, MdMenu, MdSend } from "react-icons/md";
 
 const navItems = [
-  { href: "/admin/report", label: "レポート" },
-  { href: "/admin/spot-delivery", label: "スポット配信" },
-  { href: "/admin/members", label: "会員情報" },
-  { href: "/admin/menu", label: "メニュー" },
+  { href: "/admin/report", label: "レポート", icon: MdInsertChart },
+  { href: "/admin/spot-delivery", label: "スポット配信", icon: MdSend },
+  { href: "/admin/members", label: "会員情報", icon: MdFace },
+  { href: "/admin/menu", label: "メニュー", icon: MdMenu },
 ];
 
 function isActivePath(pathname: string, href: string) {
@@ -51,15 +52,17 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
         <ul className="grid grid-cols-4">
           {navItems.map((item) => {
             const active = isActivePath(pathname, item.href);
+            const Icon = item.icon;
             return (
               <li key={item.href}>
                 <Link
                   href={item.href}
                   prefetch
-                  className={`block px-2 py-3 text-center text-xs font-semibold ${
+                  className={`flex flex-col items-center justify-center gap-0.5 px-2 py-2 text-center text-xs font-semibold ${
                     active ? "text-[#0f766e]" : "text-[#64748b]"
                   }`}
                 >
+                  <Icon size={19} aria-hidden="true" />
                   {item.label}
                 </Link>
               </li>
