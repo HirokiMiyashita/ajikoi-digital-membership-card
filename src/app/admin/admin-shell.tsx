@@ -24,7 +24,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   }
 
   return (
-    <div className="min-h-dvh bg-[#f6f8fb] text-[#0f172a]">
+    <div className="h-svh overflow-hidden bg-[#f6f8fb] text-[#0f172a] md:h-auto md:min-h-dvh md:overflow-visible">
       <aside className="fixed inset-y-0 left-0 hidden w-[240px] border-r border-[#dbe2ea] bg-white p-4 md:block">
         <p className="mb-4 text-lg font-bold">管理画面</p>
         <nav className="space-y-1">
@@ -46,7 +46,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
         </nav>
       </aside>
 
-      <div className="pb-[calc(4rem+env(safe-area-inset-bottom))] md:ml-[240px] md:pb-0">{children}</div>
+      <div className="h-full overflow-y-auto overscroll-y-contain pb-[calc(4rem+env(safe-area-inset-bottom))] md:ml-[240px] md:h-auto md:min-h-dvh md:overflow-visible md:pb-0">
+        {children}
+      </div>
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dbe2ea] bg-white md:hidden">
         <ul className="grid grid-cols-4">
