@@ -139,7 +139,6 @@ export default function Home() {
   const [currentRankName, setCurrentRankName] = useState("レギュラー");
   const [nextRankName, setNextRankName] = useState<string | null>("シルバー");
   const [pointsToNextRank, setPointsToNextRank] = useState(0);
-  const [isScanning, setIsScanning] = useState(false);
   const [isGachaJudging, setIsGachaJudging] = useState(false);
   const [checkedInToday, setCheckedInToday] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
@@ -304,6 +303,15 @@ export default function Home() {
     }
     autoCheckinTokenRef.current = checkinToken;
 
+    // 同日付与済みならAPIを叩かず即時終了する
+    if (checkedInToday) {
+      setScanMessage("本日の入店ポイントは付与済みです。");
+      url.searchParams.delete("checkinToken");
+      window.history.replaceState({}, "", url.toString());
+      setNeedsSurvey(pendingSurveyRef.current);
+      return;
+    }
+
     const runAutoCheckin = async () => {
       setIsAutoCheckinProcessing(true);
       setScanMessage("来店ポイントを付与しています...");
@@ -346,7 +354,7 @@ export default function Home() {
     };
 
     void runAutoCheckin();
-  }, [isStaffPortal, pendingSurvey, profile, userRole]);
+  }, [checkedInToday, isStaffPortal, pendingSurvey, profile, userRole]);
 
   useEffect(() => {
     const claimGiftFromQuery = async () => {
@@ -433,64 +441,6 @@ export default function Home() {
     setSurveyError(null);
     if (surveyStep > 0) {
       setSurveyStep((prev) => prev - 1);
-    }
-  };
-
-  const handleScanAndCheckin = async () => {
-    if (!profile || isScanning) {
-      return;
-    }
-
-    setIsScanning(true);
-    setGachaPopup({ open: false, won: false, giftTitle: null });
-    setScanMessage("QRコードを読み取っています...");
-
-    try {
-      const { default: liff } = await import("@line/liff");
-
-      if (!liff.isInClient()) {
-        setScanMessage("LINEアプリ内で読み取りしてください。");
-        return;
-      }
-
-      const scanResult = await liff.scanCodeV2();
-      if (!scanResult?.value) {
-        setScanMessage("QR読み取りをキャンセルしました。");
-        return;
-      }
-
-      setIsGachaJudging(true);
-      setScanMessage("判定中...");
-      const result = await rpcClient.user.addVisitPoint({
-        userId: profile.userId,
-        qrValue: scanResult.value,
-      });
-
-      setPoints(result.points);
-      setCurrentRankName(result.currentRankName);
-      setNextRankName(result.nextRankName);
-      setPointsToNextRank(result.pointsToNextRank);
-      setCheckedInToday(result.checkedInToday);
-      const giftSuffix =
-        result.grantedGiftTitles.length > 0
-          ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
-          : "";
-      if (result.gacha?.executed) {
-        setGachaPopup({
-          open: true,
-          won: result.gacha.won,
-          giftTitle: result.gacha.giftTitle ?? null,
-        });
-        setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャ結果を確認してください。`);
-      } else {
-        setScanMessage(`+1ポイントを付与しました。${giftSuffix}`.trim());
-      }
-      await fetchOwnedGifts(profile.userId);
-    } catch (error) {
-      setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
-    } finally {
-      setIsGachaJudging(false);
-      setIsScanning(false);
     }
   };
 
@@ -668,20 +618,6 @@ export default function Home() {
             </p>
           </>
         )}
-        <button
-          type="button"
-          onClick={() => void handleScanAndCheckin()}
-          disabled={isProfileLoading || !profile || isScanning || checkedInToday}
-          className="mt-4 w-full rounded-lg bg-[#0f766e] px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
-        >
-          {isProfileLoading
-            ? "読み込み中..."
-            : checkedInToday
-              ? "本日は付与済みです"
-              : isScanning
-                ? "読み取り中..."
-                : "QRを読み取って入店する"}
-        </button>
         {scanMessage && !isProfileLoading ? (
           <p className="mt-2 text-center text-xs text-[#334155]" aria-live="polite">
             {scanMessage}
@@ -790,7 +726,7 @@ export default function Home() {
             className="h-10 w-10 animate-spin rounded-full border-4 border-[#0f766e]/25 border-t-[#0f766e]"
             aria-hidden="true"
           />
-          <p className="text-sm font-semibold text-[#0f172a]">判定中...</p>
+          <p className="text-sm font-semibold text-[#0f172a]">ポイント付与中...</p>
         </div>
       ) : null}
       {gachaPopup.open ? (
