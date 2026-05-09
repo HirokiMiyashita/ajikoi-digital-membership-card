@@ -1185,26 +1185,54 @@ export const appRouter = {
       .input(
         z.object({
           userId: z.string().min(1),
+          displayName: z.string().min(1).optional(),
         }),
       )
       .handler(async ({ input }) => {
         const startedAt = Date.now();
         const ranksPromise = getCachedRanks();
-        const user = await prisma.user.findUnique({
+        const userSelect = {
+          points: true,
+          role: true,
+          lastCheckInAt: true,
+          surveyId: true,
+        } as const;
+        let user = await prisma.user.findUnique({
           where: { userId: input.userId },
-          select: {
-            points: true,
-            role: true,
-            lastCheckInAt: true,
-            surveyId: true,
-          },
+          select: userSelect,
         });
         const fetchedAt = Date.now();
+        let upsertOnMissing = 0;
+        if (!user) {
+          const upsertStartedAt = Date.now();
+          const officialAccountId = await resolveOfficialAccountId();
+          await prisma.user.upsert({
+            where: { userId: input.userId },
+            create: {
+              userId: input.userId,
+              displayName: input.displayName ?? "ゲスト",
+              officialAccountId,
+              officialLinkedAt: officialAccountId ? new Date() : null,
+            },
+            // race conditionで既存化していた場合は表示名のみ同期する。
+            update: {
+              ...(input.displayName ? { displayName: input.displayName } : {}),
+            },
+          });
+          user = await prisma.user.findUnique({
+            where: { userId: input.userId },
+            select: userSelect,
+          });
+          upsertOnMissing = Date.now() - upsertStartedAt;
+        }
+        if (!user) {
+          throw new Error("ユーザー取得に失敗しました。");
+        }
 
-        const points = user?.points ?? 0;
-        const role = user?.role ?? null;
-        const checkedInToday = isCheckedInToday(user?.lastCheckInAt ?? null);
-        const hasSurvey = Boolean(user?.surveyId);
+        const points = user.points;
+        const role = user.role ?? null;
+        const checkedInToday = isCheckedInToday(user.lastCheckInAt);
+        const hasSurvey = Boolean(user.surveyId);
         const ranks = await ranksPromise;
         const currentRank = findRankByPoints(ranks, points);
         const nextRank = findNextRankByPoints(ranks, points);
@@ -1215,6 +1243,7 @@ export const appRouter = {
           console.info("[user.getFromLiff-ms]", {
             total: elapsedMs,
             fetchUser: fetchedAt - startedAt,
+            upsertOnMissing,
             resolveRanks: rankedAt - fetchedAt,
           });
         }

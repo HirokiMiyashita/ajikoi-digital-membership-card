@@ -214,6 +214,7 @@ export default function Home() {
         setProfile(userProfile);
         const syncResult = await rpcClient.user.getFromLiff({
           userId: userProfile.userId,
+          displayName: userProfile.displayName,
         });
         const syncedAt = performance.now();
         // const syncResult = await rpcClient.user.upsertFromLiff({
