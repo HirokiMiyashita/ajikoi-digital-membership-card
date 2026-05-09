@@ -39,6 +39,12 @@ export default async function AdminSpotDeliveryPage() {
     prisma.userHistory.findMany({
       where: {
         action: "line_trigger_delivery_executed",
+        actorType: "admin",
+        actorId: {
+          not: {
+            startsWith: "system:",
+          },
+        },
         ...(adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : {}),
       },
       orderBy: { createdAt: "desc" },
