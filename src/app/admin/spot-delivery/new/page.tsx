@@ -37,16 +37,7 @@ function resolveLineImageUrl(imageUrl: string, absoluteTemplateUrls: string[]) {
 
 export default async function AdminSpotDeliveryNewPage() {
   const adminUser = await requireAdminUser();
-  const [users, gifts, templates, targetCount] = await Promise.all([
-    prisma.user.findMany({
-      where: adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : undefined,
-      orderBy: { createdAt: "desc" },
-      select: {
-        userId: true,
-        displayName: true,
-      },
-      take: 300,
-    }),
+  const [gifts, templates, targetCount, ranks] = await Promise.all([
     prisma.gift.findMany({
       orderBy: { createdAt: "desc" },
       select: {
@@ -67,6 +58,14 @@ export default async function AdminSpotDeliveryNewPage() {
     prisma.user.count({
       where: adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : undefined,
     }),
+    prisma.rank.findMany({
+      orderBy: { minPoints: "asc" },
+      select: {
+        id: true,
+        name: true,
+      },
+      take: 50,
+    }),
   ]);
   const absoluteTemplateUrls = (templates as GiftTemplateUrlRow[])
     .map((row: GiftTemplateUrlRow) => row.imageUrl)
@@ -77,5 +76,5 @@ export default async function AdminSpotDeliveryNewPage() {
     lineImageUrl: resolveLineImageUrl(gift.imageUrl, absoluteTemplateUrls),
   }));
 
-  return <SpotDeliveryEditorClient users={users} gifts={normalizedGifts} targetCount={targetCount} />;
+  return <SpotDeliveryEditorClient gifts={normalizedGifts} rankOptions={ranks} targetCount={targetCount} />;
 }

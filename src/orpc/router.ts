@@ -26,6 +26,7 @@ const RANK_CACHE_TTL_MS = 5 * 60 * 1000;
 const SIGNUP_INITIAL_POINTS = 1;
 type GiftExpiryTypeValue = "DAYS_AFTER_ISSUE" | "FIXED_DATE";
 type LineDeliveryTriggerTypeValue = "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
+type DeliveryVisitCountSegmentValue = "ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE";
 type UserRoleValue = "staff";
 type CachedRank = {
   id: string;
@@ -452,6 +453,14 @@ async function sendLineDeliveryTriggers(params: {
   targetUserId: string;
 }) {
   try {
+    const resolveVisitCountSegment = (checkInCount: number): DeliveryVisitCountSegmentValue => {
+      if (checkInCount <= 0) return "ZERO";
+      if (checkInCount === 1) return "ONE";
+      if (checkInCount <= 4) return "TWO_TO_FOUR";
+      if (checkInCount <= 9) return "FIVE_TO_NINE";
+      return "TEN_OR_MORE";
+    };
+
     const settings = await prisma.lineDeliveryTriggerSetting.findMany({
       where: {
         triggerType: params.triggerType,
@@ -466,6 +475,9 @@ async function sendLineDeliveryTriggers(params: {
         notificationText: true,
         messages: true,
         message: true,
+        targetRankIds: true,
+        targetGender: true,
+        targetVisitCountSegments: true,
       },
       take: 20,
     });
@@ -473,9 +485,48 @@ async function sendLineDeliveryTriggers(params: {
       return;
     }
 
+    const [targetUser, checkInCount] = await Promise.all([
+      prisma.user.findUnique({
+        where: { userId: params.targetUserId },
+        select: {
+          nextRank: true,
+          survey: {
+            select: {
+              gender: true,
+            },
+          },
+        },
+      }),
+      prisma.userCheckIn.count({
+        where: { userId: params.targetUserId },
+      }),
+    ]);
+    if (!targetUser) {
+      return;
+    }
+    const visitCountSegment = resolveVisitCountSegment(checkInCount);
+    const matchedSettings = settings.filter((setting) => {
+      if (setting.targetRankIds.length > 0 && !setting.targetRankIds.includes(targetUser.nextRank)) {
+        return false;
+      }
+      if (setting.targetGender && setting.targetGender !== (targetUser.survey?.gender ?? null)) {
+        return false;
+      }
+      if (
+        setting.targetVisitCountSegments.length > 0 &&
+        !setting.targetVisitCountSegments.includes(visitCountSegment)
+      ) {
+        return false;
+      }
+      return true;
+    });
+    if (matchedSettings.length === 0) {
+      return;
+    }
+
     const { inngest } = await import("@/lib/inngest/client");
     await Promise.allSettled(
-      settings.map((setting) =>
+      matchedSettings.map((setting) =>
         inngest.send({
           name: "line/delivery.triggered",
           data: {

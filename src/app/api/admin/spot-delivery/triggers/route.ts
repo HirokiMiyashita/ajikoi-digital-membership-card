@@ -1,4 +1,4 @@
-import { LineDeliveryTriggerType, Prisma } from "@prisma/client";
+import { DeliveryVisitCountSegment, LineDeliveryTriggerType, Prisma } from "@prisma/client";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -30,6 +30,9 @@ const triggerSettingSchema = z.object({
       ]),
     )
     .min(1, "配信メッセージを1つ以上追加してください。"),
+  targetRankIds: z.array(z.string().min(1)).max(20).optional().default([]),
+  targetGender: z.enum(["male", "female", "other"]).nullable().optional().default(null),
+  targetVisitCountSegments: z.array(z.nativeEnum(DeliveryVisitCountSegment)).max(10).optional().default([]),
   isActive: z.boolean().optional().default(true),
 });
 
@@ -69,6 +72,9 @@ export async function POST(request: Request) {
         message:
           parsed.data.notificationText ||
           (parsed.data.messages.find((item) => item.type === "text")?.text ?? ""),
+        targetRankIds: parsed.data.targetRankIds,
+        targetGender: parsed.data.targetGender,
+        targetVisitCountSegments: parsed.data.targetVisitCountSegments,
         isActive: parsed.data.isActive,
       },
     });

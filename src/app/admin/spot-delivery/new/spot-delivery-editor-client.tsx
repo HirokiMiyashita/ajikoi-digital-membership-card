@@ -3,11 +3,6 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type UserOption = {
-  userId: string;
-  displayName: string;
-};
-
 type GiftOption = {
   id: string;
   title: string;
@@ -18,8 +13,8 @@ type GiftOption = {
 };
 
 type Props = {
-  users: UserOption[];
   gifts: GiftOption[];
+  rankOptions: Array<{ id: string; name: string }>;
   targetCount: number;
 };
 
@@ -41,9 +36,11 @@ type LineFlexMessage = {
 };
 
 type LineMessage = LineTextMessage | LineImageMessage | LineFlexMessage;
+type DeliveryVisitCountSegment = "ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE";
 
-export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: Props) {
+export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCount }: Props) {
   const [title, setTitle] = useState("");
+  const [activeTab, setActiveTab] = useState<"content" | "segment">("content");
   const [notificationText, setNotificationText] = useState("");
   const [message, setMessage] = useState("");
   const [showTextElement, setShowTextElement] = useState(false);
@@ -54,8 +51,9 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
-  const [targetMode, setTargetMode] = useState<"all" | "selected">("all");
-  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [targetRankIds, setTargetRankIds] = useState<string[]>([]);
+  const [targetGender, setTargetGender] = useState<"male" | "female" | "other" | null>(null);
+  const [targetVisitCountSegments, setTargetVisitCountSegments] = useState<DeliveryVisitCountSegment[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -68,23 +66,31 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
     if (showTextElement && message.trim().length === 0) return false;
     if (showImageElement && !selectedImageFile && !uploadedImageUrl) return false;
     if (showGiftElement && !selectedGift) return false;
-    if (targetMode === "selected") return selectedUserIds.length > 0;
     return true;
   }, [
     message,
     selectedGift,
     selectedImageFile,
-    selectedUserIds,
     showGiftElement,
     showImageElement,
     showTextElement,
-    targetMode,
     uploadedImageUrl,
   ]);
-
-  const toggleSelectedUser = (userId: string) => {
-    setSelectedUserIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId],
+  const visitCountSegmentOptions: Array<{ value: DeliveryVisitCountSegment; label: string }> = [
+    { value: "ZERO", label: "0回" },
+    { value: "ONE", label: "1回" },
+    { value: "TWO_TO_FOUR", label: "2〜4回" },
+    { value: "FIVE_TO_NINE", label: "5〜9回" },
+    { value: "TEN_OR_MORE", label: "10回以上" },
+  ];
+  const toggleRankTarget = (rankId: string) => {
+    setTargetRankIds((prev) =>
+      prev.includes(rankId) ? prev.filter((id) => id !== rankId) : [...prev, rankId],
+    );
+  };
+  const toggleVisitCountTarget = (segment: DeliveryVisitCountSegment) => {
+    setTargetVisitCountSegments((prev) =>
+      prev.includes(segment) ? prev.filter((value) => value !== segment) : [...prev, segment],
     );
   };
 
@@ -247,8 +253,11 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
           title,
           notificationText: notificationText.trim(),
           messages: lineMessages,
-          targetMode,
-          userIds: targetMode === "selected" ? selectedUserIds : [],
+          targetFilters: {
+            rankIds: targetRankIds,
+            gender: targetGender,
+            visitCountSegments: targetVisitCountSegments,
+          },
         }),
       });
       const json = (await response.json()) as { ok: boolean; message?: string };
@@ -266,7 +275,9 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
       setSelectedGift(null);
       setSelectedImageFile(null);
       setUploadedImageUrl(null);
-      setSelectedUserIds([]);
+      setTargetRankIds([]);
+      setTargetGender(null);
+      setTargetVisitCountSegments([]);
     } catch (error) {
       showToast(error instanceof Error ? error.message : "通信エラーが発生しました。", true);
     } finally {
@@ -313,194 +324,245 @@ export default function SpotDeliveryEditorClient({ users, gifts, targetCount }: 
         <div className="grid grid-cols-1 md:grid-cols-[1fr_320px]">
           <div className="border-r border-[#e2e8f0] p-4">
             <div className="mb-4 flex gap-4 border-b border-[#e2e8f0] text-sm font-semibold">
-              <span className="border-b-2 border-[#0f766e] pb-2 text-[#0f172a]">配信内容</span>
-              <span className="pb-2 text-[#94a3b8]">セグメント</span>
+              <button
+                type="button"
+                onClick={() => setActiveTab("content")}
+                className={`border-b-2 pb-2 ${
+                  activeTab === "content"
+                    ? "border-[#0f766e] text-[#0f172a]"
+                    : "border-transparent text-[#94a3b8]"
+                }`}
+              >
+                配信内容
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("segment")}
+                className={`border-b-2 pb-2 ${
+                  activeTab === "segment"
+                    ? "border-[#0f766e] text-[#0f172a]"
+                    : "border-transparent text-[#94a3b8]"
+                }`}
+              >
+                セグメント
+              </button>
             </div>
 
-            <section className="space-y-3 rounded-lg border border-[#e2e8f0] p-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-[#334155]">通知テキスト</p>
-                <button type="button" className="rounded border border-[#cbd5e1] px-3 py-1 text-xs">
-                  設定
-                </button>
-              </div>
-              <input
-                value={notificationText}
-                onChange={(event) => setNotificationText(event.target.value)}
-                placeholder="ロック画面用のテキスト"
-                className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
-              />
-            </section>
+            {activeTab === "content" ? (
+              <>
+                <section className="space-y-3 rounded-lg border border-[#e2e8f0] p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-[#334155]">通知テキスト</p>
+                  </div>
+                  <input
+                    value={notificationText}
+                    onChange={(event) => setNotificationText(event.target.value)}
+                    placeholder="ロック画面用のテキスト"
+                    className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
+                  />
+                </section>
 
-            {showTextElement ? (
-              <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                <p className="text-sm font-semibold text-[#334155]">本文テキスト</p>
-                <textarea
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  placeholder="配信本文を入力してください"
-                  className="mt-2 min-h-[120px] w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
-                />
-              </section>
-            ) : null}
+                {showTextElement ? (
+                  <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
+                    <p className="text-sm font-semibold text-[#334155]">本文テキスト</p>
+                    <textarea
+                      value={message}
+                      onChange={(event) => setMessage(event.target.value)}
+                      placeholder="配信本文を入力してください"
+                      className="mt-2 min-h-[120px] w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
+                    />
+                  </section>
+                ) : null}
 
-            {showImageElement ? (
-              <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                <p className="text-sm font-semibold text-[#334155]">画像</p>
-                <p className="mt-1 text-sm text-[#64748b]">画像を選択できます</p>
-                <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
-                        {imagePreviewUrl ? (
-                          <img src={imagePreviewUrl} alt="選択画像プレビュー" className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">画像</div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-[#64748b]">画像</p>
-                        <p className="truncate text-lg font-semibold text-[#0f172a]">
-                          {selectedImageFile?.name ?? "未設定"}
-                        </p>
+                {showImageElement ? (
+                  <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
+                    <p className="text-sm font-semibold text-[#334155]">画像</p>
+                    <p className="mt-1 text-sm text-[#64748b]">画像を選択できます</p>
+                    <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
+                            {imagePreviewUrl ? (
+                              <img src={imagePreviewUrl} alt="選択画像プレビュー" className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">画像</div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm text-[#64748b]">画像</p>
+                            <p className="truncate text-lg font-semibold text-[#0f172a]">
+                              {selectedImageFile?.name ?? "未設定"}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openImagePicker}
+                          disabled={isUploadingImage}
+                          className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                        >
+                          {isUploadingImage ? "アップロード中..." : "変更"}
+                        </button>
                       </div>
                     </div>
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageFileChange}
+                    />
+                  </section>
+                ) : null}
+
+                {showGiftElement ? (
+                  <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
+                    <p className="text-sm font-semibold text-[#334155]">ギフト</p>
+                    <p className="mt-1 text-sm text-[#64748b]">配信に使用するギフトを設定できます</p>
+                    <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
+                            {selectedGift ? (
+                              <img src={selectedGift.previewImageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">🎁</div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm text-[#64748b]">ギフト</p>
+                            <p className="truncate text-lg font-semibold text-[#0f172a]">
+                              {selectedGift?.title ?? "未設定"}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openGiftSheet}
+                          className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                        >
+                          変更
+                        </button>
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
+
+                <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
+                  <p className="text-sm font-semibold text-[#334155]">追加する要素</p>
+                  <div className="mt-3 grid grid-cols-5 gap-2 text-center text-xs text-[#334155]">
+                    <button
+                      type="button"
+                      onClick={() => setShowTextElement(true)}
+                      className={`rounded border px-2 py-3 ${
+                        showTextElement
+                          ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
+                          : "border-[#dbe2ea] bg-[#f8fafc]"
+                      }`}
+                    >
+                      テキスト
+                    </button>
                     <button
                       type="button"
                       onClick={openImagePicker}
-                      disabled={isUploadingImage}
-                      className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                      className={`rounded border px-2 py-3 ${
+                        showImageElement
+                          ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
+                          : "border-[#dbe2ea] bg-[#f8fafc]"
+                      }`}
                     >
-                      {isUploadingImage ? "アップロード中..." : "変更"}
+                      画像
                     </button>
-                  </div>
-                </div>
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageFileChange}
-                />
-              </section>
-            ) : null}
-
-            {showGiftElement ? (
-              <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                <p className="text-sm font-semibold text-[#334155]">ギフト</p>
-                <p className="mt-1 text-sm text-[#64748b]">配信に使用するギフトを設定できます</p>
-                <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
-                        {selectedGift ? (
-                          <img src={selectedGift.previewImageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">🎁</div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-[#64748b]">ギフト</p>
-                        <p className="truncate text-lg font-semibold text-[#0f172a]">
-                          {selectedGift?.title ?? "未設定"}
-                        </p>
-                      </div>
-                    </div>
                     <button
                       type="button"
                       onClick={openGiftSheet}
-                      className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                      className={`rounded border px-2 py-3 ${
+                        showGiftElement
+                          ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
+                          : "border-[#dbe2ea] bg-[#f8fafc]"
+                      }`}
                     >
-                      変更
+                      ギフト
                     </button>
+                    {["アンケート", "カード"].map((label) => (
+                      <div key={label} className="rounded border border-[#dbe2ea] bg-[#f8fafc] px-2 py-3">
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </>
+            ) : (
+              <section className="rounded-lg border border-[#e2e8f0] p-4">
+                <p className="text-sm font-semibold text-[#334155]">送信対象の絞り込み</p>
+                <p className="mt-1 text-xs text-[#64748b]">未選択の項目はすべて対象です。</p>
+
+                <div className="mt-4 space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-[#475569]">会員ランク（複数選択）</p>
+                    <div className="flex flex-wrap gap-2">
+                      {rankOptions.map((rank) => {
+                        const checked = targetRankIds.includes(rank.id);
+                        return (
+                          <button
+                            key={rank.id}
+                            type="button"
+                            onClick={() => toggleRankTarget(rank.id)}
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                              checked
+                                ? "border-[#0f766e] bg-[#ccfbf1] text-[#0f766e]"
+                                : "border-[#cbd5e1] bg-white text-[#475569]"
+                            }`}
+                          >
+                            {rank.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <label className="block space-y-1">
+                    <span className="text-xs font-semibold text-[#475569]">性別</span>
+                    <select
+                      value={targetGender ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value as "male" | "female" | "other" | "";
+                        setTargetGender(value ? value : null);
+                      }}
+                      className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-sm outline-none focus:border-[#0f9f99]"
+                    >
+                      <option value="">すべて</option>
+                      <option value="male">男性</option>
+                      <option value="female">女性</option>
+                      <option value="other">その他</option>
+                    </select>
+                  </label>
+
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-[#475569]">来店回数（複数選択）</p>
+                    <div className="flex flex-wrap gap-2">
+                      {visitCountSegmentOptions.map((segment) => {
+                        const checked = targetVisitCountSegments.includes(segment.value);
+                        return (
+                          <button
+                            key={segment.value}
+                            type="button"
+                            onClick={() => toggleVisitCountTarget(segment.value)}
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                              checked
+                                ? "border-[#0f766e] bg-[#ccfbf1] text-[#0f766e]"
+                                : "border-[#cbd5e1] bg-white text-[#475569]"
+                            }`}
+                          >
+                            {segment.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </section>
-            ) : null}
-
-            <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-              <p className="text-sm font-semibold text-[#334155]">追加する要素</p>
-              <div className="mt-3 grid grid-cols-5 gap-2 text-center text-xs text-[#334155]">
-                <button
-                  type="button"
-                  onClick={() => setShowTextElement(true)}
-                  className={`rounded border px-2 py-3 ${
-                    showTextElement
-                      ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
-                      : "border-[#dbe2ea] bg-[#f8fafc]"
-                  }`}
-                >
-                  テキスト
-                </button>
-                <button
-                  type="button"
-                  onClick={openImagePicker}
-                  className={`rounded border px-2 py-3 ${
-                    showImageElement
-                      ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
-                      : "border-[#dbe2ea] bg-[#f8fafc]"
-                  }`}
-                >
-                  画像
-                </button>
-                <button
-                  type="button"
-                  onClick={openGiftSheet}
-                  className={`rounded border px-2 py-3 ${
-                    showGiftElement
-                      ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
-                      : "border-[#dbe2ea] bg-[#f8fafc]"
-                  }`}
-                >
-                  ギフト
-                </button>
-                {["アンケート", "カード"].map((label) => (
-                  <div key={label} className="rounded border border-[#dbe2ea] bg-[#f8fafc] px-2 py-3">
-                    {label}
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-              <p className="text-sm font-semibold text-[#334155]">配信対象</p>
-              <div className="mt-2 flex items-center gap-4 text-sm">
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="targetMode"
-                    checked={targetMode === "all"}
-                    onChange={() => setTargetMode("all")}
-                  />
-                  すべての会員
-                </label>
-                <label className="inline-flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="targetMode"
-                    checked={targetMode === "selected"}
-                    onChange={() => setTargetMode("selected")}
-                  />
-                  対象会員を選択
-                </label>
-              </div>
-              {targetMode === "selected" ? (
-                <div className="mt-3 max-h-44 space-y-2 overflow-y-auto rounded border border-[#dbe2ea] p-2">
-                  {users.map((user) => (
-                    <label key={user.userId} className="flex items-center gap-2 text-sm text-[#334155]">
-                      <input
-                        type="checkbox"
-                        checked={selectedUserIds.includes(user.userId)}
-                        onChange={() => toggleSelectedUser(user.userId)}
-                      />
-                      <span className="truncate">
-                        {user.displayName} ({user.userId})
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-            </section>
+            )}
           </div>
 
           <aside className="bg-[#9db8de] p-4">

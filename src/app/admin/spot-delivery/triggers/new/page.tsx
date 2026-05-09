@@ -36,7 +36,7 @@ function resolveLineImageUrl(imageUrl: string, absoluteTemplateUrls: string[]) {
 
 export default async function AdminTriggerDeliveryNewPage() {
   await requireAdminUser();
-  const [gifts, templates] = await Promise.all([
+  const [gifts, templates, ranks] = await Promise.all([
     prisma.gift.findMany({
       orderBy: { createdAt: "desc" },
       select: {
@@ -54,6 +54,14 @@ export default async function AdminTriggerDeliveryNewPage() {
       },
       take: 100,
     }),
+    prisma.rank.findMany({
+      orderBy: { minPoints: "asc" },
+      select: {
+        id: true,
+        name: true,
+      },
+      take: 50,
+    }),
   ]);
   const absoluteTemplateUrls = (templates as GiftTemplateUrlRow[])
     .map((row: GiftTemplateUrlRow) => row.imageUrl)
@@ -64,5 +72,5 @@ export default async function AdminTriggerDeliveryNewPage() {
     lineImageUrl: resolveLineImageUrl(gift.imageUrl, absoluteTemplateUrls),
   }));
 
-  return <TriggerDeliveryEditorClient gifts={normalizedGifts} />;
+  return <TriggerDeliveryEditorClient gifts={normalizedGifts} rankOptions={ranks} />;
 }

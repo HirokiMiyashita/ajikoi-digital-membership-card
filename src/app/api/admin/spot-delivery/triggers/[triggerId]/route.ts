@@ -1,4 +1,4 @@
-import { LineDeliveryTriggerType, Prisma } from "@prisma/client";
+import { DeliveryVisitCountSegment, LineDeliveryTriggerType, Prisma } from "@prisma/client";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -31,6 +31,9 @@ const triggerSettingSchema = z.object({
     )
     .min(1, "配信メッセージを1つ以上追加してください。")
     .optional(),
+  targetRankIds: z.array(z.string().min(1)).max(20).optional(),
+  targetGender: z.enum(["male", "female", "other"]).nullable().optional(),
+  targetVisitCountSegments: z.array(z.nativeEnum(DeliveryVisitCountSegment)).max(10).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -86,6 +89,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         notificationText: true,
         messages: true,
         message: true,
+        targetRankIds: true,
+        targetGender: true,
+        targetVisitCountSegments: true,
         isActive: true,
       },
     });
@@ -99,6 +105,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     const nextMessages = parsed.data.messages ?? (Array.isArray(target.messages) ? target.messages : [
       { type: "text", text: target.message || "" },
     ]);
+    const nextTargetRankIds = parsed.data.targetRankIds ?? target.targetRankIds;
+    const nextTargetGender =
+      parsed.data.targetGender !== undefined ? parsed.data.targetGender : target.targetGender;
+    const nextTargetVisitCountSegments =
+      parsed.data.targetVisitCountSegments ?? target.targetVisitCountSegments;
     const nextIsActive = parsed.data.isActive ?? target.isActive;
     await prisma.lineDeliveryTriggerSetting.update({
       where: { id: triggerId },
@@ -110,6 +121,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         message:
           nextNotificationText ||
           ((nextMessages as Array<{ type?: string; text?: string }>).find((item) => item.type === "text")?.text ?? ""),
+        targetRankIds: nextTargetRankIds,
+        targetGender: nextTargetGender,
+        targetVisitCountSegments: nextTargetVisitCountSegments,
         isActive: nextIsActive,
       },
     });

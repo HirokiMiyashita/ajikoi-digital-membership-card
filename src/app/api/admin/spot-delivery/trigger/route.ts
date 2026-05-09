@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { adminAuth } from "@/lib/admin-auth";
@@ -27,8 +28,21 @@ const triggerPayloadSchema = z.object({
       ]),
     )
     .min(1, "配信メッセージを1つ以上追加してください。"),
-  targetMode: z.enum(["all", "selected"]).default("all"),
-  userIds: z.array(z.string().min(1)).optional().default([]),
+  targetFilters: z
+    .object({
+      rankIds: z.array(z.string().min(1)).optional().default([]),
+      gender: z.enum(["male", "female", "other"]).nullable().optional().default(null),
+      visitCountSegments: z
+        .array(z.enum(["ZERO", "ONE", "TWO_TO_FOUR", "FIVE_TO_NINE", "TEN_OR_MORE"]))
+        .optional()
+        .default([]),
+    })
+    .optional()
+    .default({
+      rankIds: [],
+      gender: null,
+      visitCountSegments: [],
+    }),
 });
 
 export async function POST(request: Request) {
@@ -57,10 +71,46 @@ export async function POST(request: Request) {
       );
     }
 
-    const { title, notificationText, messages, targetMode, userIds } = parsed.data;
-    const targetUserIds = targetMode === "selected" ? userIds : [];
-    if (targetMode === "selected" && targetUserIds.length === 0) {
-      return Response.json({ ok: false, message: "配信対象ユーザーを選択してください。" }, { status: 400 });
+    const { title, notificationText, messages, targetFilters } = parsed.data;
+
+    const users = await prisma.user.findMany({
+      where: {
+        ...(adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : {}),
+        ...(targetFilters.rankIds.length > 0 ? { nextRank: { in: targetFilters.rankIds } } : {}),
+        ...(targetFilters.gender ? { survey: { is: { gender: targetFilters.gender } } } : {}),
+      },
+      select: {
+        userId: true,
+      },
+      take: 10000,
+    });
+    let targetUserIds = users.map((row) => row.userId);
+
+    if (targetFilters.visitCountSegments.length > 0 && targetUserIds.length > 0) {
+      const checkInRows = await prisma.$queryRaw<Array<{ userId: string; checkInCount: number }>>`
+        SELECT u."userId" AS "userId", COUNT(c."id")::int AS "checkInCount"
+        FROM "users" u
+        LEFT JOIN "user_checkins" c ON c."userId" = u."userId"
+        WHERE u."userId" IN (${Prisma.join(targetUserIds)})
+        GROUP BY u."userId"
+      `;
+      const resolveVisitCountSegment = (count: number) => {
+        if (count <= 0) return "ZERO";
+        if (count === 1) return "ONE";
+        if (count <= 4) return "TWO_TO_FOUR";
+        if (count <= 9) return "FIVE_TO_NINE";
+        return "TEN_OR_MORE";
+      };
+      const allowedIds = new Set(
+        checkInRows
+          .filter((row) => targetFilters.visitCountSegments.includes(resolveVisitCountSegment(row.checkInCount)))
+          .map((row) => row.userId),
+      );
+      targetUserIds = targetUserIds.filter((userId) => allowedIds.has(userId));
+    }
+
+    if (targetUserIds.length === 0) {
+      return Response.json({ ok: false, message: "条件に一致する配信対象がいません。" }, { status: 400 });
     }
 
     await inngest.send({

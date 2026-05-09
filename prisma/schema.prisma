@@ -262,18 +262,29 @@ enum LineDeliveryTriggerType {
   RANK_UP
 }
 
+enum DeliveryVisitCountSegment {
+  ZERO
+  ONE
+  TWO_TO_FOUR
+  FIVE_TO_NINE
+  TEN_OR_MORE
+}
+
 model LineDeliveryTriggerSetting {
-  id                String                  @id @default(cuid())
-  officialAccountId String?
-  title             String
-  triggerType       LineDeliveryTriggerType
-  notificationText  String                  @default("")
-  messages          Json?
-  message           String
-  isActive          Boolean                 @default(true)
-  officialAccount   OfficialAccount?        @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
-  createdAt         DateTime                @default(now())
-  updatedAt         DateTime                @updatedAt
+  id                       String                      @id @default(cuid())
+  officialAccountId        String?
+  title                    String
+  triggerType              LineDeliveryTriggerType
+  notificationText         String                      @default("")
+  messages                 Json?
+  message                  String
+  targetRankIds            String[]                    @default([])
+  targetGender             String?
+  targetVisitCountSegments DeliveryVisitCountSegment[] @default([])
+  isActive                 Boolean                     @default(true)
+  officialAccount          OfficialAccount?            @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
+  createdAt                DateTime                    @default(now())
+  updatedAt                DateTime                    @updatedAt
 
   @@index([officialAccountId])
   @@index([triggerType])

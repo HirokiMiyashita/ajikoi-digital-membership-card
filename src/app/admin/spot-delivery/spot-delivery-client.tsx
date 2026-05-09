@@ -17,6 +17,9 @@ type TriggerSetting = {
   notificationText: string;
   messages: unknown;
   message: string;
+  targetRankIds: string[];
+  targetGender: string | null;
+  targetVisitCountSegments: Array<"ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE">;
   isActive: boolean;
   updatedAt: string;
 };
@@ -70,6 +73,9 @@ export default function SpotDeliveryClient({ deliveryHistory, triggerSettings }:
           messages: Array.isArray(row.messages)
             ? row.messages
             : [{ type: "text", text: row.message ?? "" }],
+          targetRankIds: row.targetRankIds,
+          targetGender: row.targetGender,
+          targetVisitCountSegments: row.targetVisitCountSegments,
           isActive: !row.isActive,
         }),
       });

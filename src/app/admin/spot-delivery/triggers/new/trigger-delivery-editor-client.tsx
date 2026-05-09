@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type TriggerType = "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
+type DeliveryVisitCountSegment = "ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE";
 type LineTextMessage = { type: "text"; text: string };
 type LineImageMessage = { type: "image"; originalContentUrl: string; previewImageUrl: string };
 type LineFlexMessage = { type: "flex"; altText: string; contents: Record<string, unknown> };
@@ -20,6 +21,7 @@ type GiftOption = {
 
 type Props = {
   gifts: GiftOption[];
+  rankOptions: Array<{ id: string; name: string }>;
   mode?: "create" | "edit";
   triggerId?: string;
   initialValue?: {
@@ -28,6 +30,9 @@ type Props = {
     notificationText?: string;
     messages?: unknown;
     message: string;
+    targetRankIds?: string[];
+    targetGender?: "male" | "female" | "other" | null;
+    targetVisitCountSegments?: DeliveryVisitCountSegment[];
     isActive: boolean;
   };
 };
@@ -69,6 +74,7 @@ function parseInitialMessages(rawMessages: unknown, fallbackMessage: string): Li
 
 export default function TriggerDeliveryEditorClient({
   gifts,
+  rankOptions,
   mode = "create",
   triggerId,
   initialValue,
@@ -90,6 +96,7 @@ export default function TriggerDeliveryEditorClient({
       : null;
 
   const [title, setTitle] = useState(initialValue?.title ?? "");
+  const [activeTab, setActiveTab] = useState<"content" | "segment">("content");
   const [triggerType, setTriggerType] = useState<TriggerType>(initialValue?.triggerType ?? "USER_SIGNUP");
   const [notificationText, setNotificationText] = useState(initialValue?.notificationText ?? "");
   const [message, setMessage] = useState(initialTextMessage?.text ?? initialValue?.message ?? "");
@@ -100,6 +107,11 @@ export default function TriggerDeliveryEditorClient({
   const [isGiftSheetOpen, setIsGiftSheetOpen] = useState(false);
   const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(initialImageMessage?.originalContentUrl ?? null);
+  const [targetRankIds, setTargetRankIds] = useState<string[]>(initialValue?.targetRankIds ?? []);
+  const [targetGender, setTargetGender] = useState<"male" | "female" | "other" | null>(initialValue?.targetGender ?? null);
+  const [targetVisitCountSegments, setTargetVisitCountSegments] = useState<DeliveryVisitCountSegment[]>(
+    initialValue?.targetVisitCountSegments ?? [],
+  );
   const [isActive, setIsActive] = useState(initialValue?.isActive ?? true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -276,6 +288,29 @@ export default function TriggerDeliveryEditorClient({
     CHECKIN_POINT_GRANTED: "来店ポイント付与時",
     RANK_UP: "ランクアップ時",
   };
+  const genderOptions: Array<{ value: "male" | "female" | "other"; label: string }> = [
+    { value: "male", label: "男性" },
+    { value: "female", label: "女性" },
+    { value: "other", label: "その他" },
+  ];
+  const visitCountSegmentOptions: Array<{ value: DeliveryVisitCountSegment; label: string }> = [
+    { value: "ZERO", label: "0回" },
+    { value: "ONE", label: "1回" },
+    { value: "TWO_TO_FOUR", label: "2〜4回" },
+    { value: "FIVE_TO_NINE", label: "5〜9回" },
+    { value: "TEN_OR_MORE", label: "10回以上" },
+  ];
+
+  const toggleRankTarget = (rankId: string) => {
+    setTargetRankIds((prev) =>
+      prev.includes(rankId) ? prev.filter((id) => id !== rankId) : [...prev, rankId],
+    );
+  };
+  const toggleVisitCountTarget = (segment: DeliveryVisitCountSegment) => {
+    setTargetVisitCountSegments((prev) =>
+      prev.includes(segment) ? prev.filter((value) => value !== segment) : [...prev, segment],
+    );
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -304,6 +339,9 @@ export default function TriggerDeliveryEditorClient({
           triggerType,
           notificationText: notificationText.trim(),
           messages: lineMessages,
+          targetRankIds,
+          targetGender,
+          targetVisitCountSegments,
           isActive,
         }),
       });
@@ -358,10 +396,32 @@ export default function TriggerDeliveryEditorClient({
         <div className="grid grid-cols-1 md:grid-cols-[1fr_320px]">
           <div className="border-r border-[#e2e8f0] p-4">
             <div className="mb-4 flex gap-4 border-b border-[#e2e8f0] text-sm font-semibold">
-              <span className="border-b-2 border-[#0f766e] pb-2 text-[#0f172a]">配信内容</span>
-              <span className="pb-2 text-[#94a3b8]">プレビュー</span>
+              <button
+                type="button"
+                onClick={() => setActiveTab("content")}
+                className={`border-b-2 pb-2 ${
+                  activeTab === "content"
+                    ? "border-[#0f766e] text-[#0f172a]"
+                    : "border-transparent text-[#94a3b8]"
+                }`}
+              >
+                配信内容
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("segment")}
+                className={`border-b-2 pb-2 ${
+                  activeTab === "segment"
+                    ? "border-[#0f766e] text-[#0f172a]"
+                    : "border-transparent text-[#94a3b8]"
+                }`}
+              >
+                セグメント
+              </button>
             </div>
 
+            {activeTab === "content" ? (
+              <>
             <section className="space-y-3 rounded-lg border border-[#e2e8f0] p-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold text-[#334155]">通知テキスト</p>
@@ -384,7 +444,6 @@ export default function TriggerDeliveryEditorClient({
                   <option value="RANK_UP">ランクアップ時</option>
                 </select>
               </label>
-
               <label className="flex items-center gap-2 text-sm text-[#334155]">
                 <input
                   type="checkbox"
@@ -526,6 +585,78 @@ export default function TriggerDeliveryEditorClient({
                 ))}
               </div>
             </section>
+              </>
+            ) : (
+              <section className="space-y-3 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-4">
+                <p className="text-sm font-semibold text-[#334155]">送信対象の絞り込み</p>
+                <p className="text-xs text-[#64748b]">未選択の条件は「すべて対象」になります。</p>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-[#475569]">ランク（複数選択）</p>
+                  <div className="flex flex-wrap gap-2">
+                    {rankOptions.map((rank) => {
+                      const checked = targetRankIds.includes(rank.id);
+                      return (
+                        <button
+                          key={rank.id}
+                          type="button"
+                          onClick={() => toggleRankTarget(rank.id)}
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                            checked
+                              ? "border-[#0f766e] bg-[#ccfbf1] text-[#0f766e]"
+                              : "border-[#cbd5e1] bg-white text-[#475569]"
+                          }`}
+                        >
+                          {rank.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-[#475569]">性別</span>
+                  <select
+                    value={targetGender ?? ""}
+                    onChange={(event) => {
+                      const value = event.target.value as "male" | "female" | "other" | "";
+                      setTargetGender(value ? value : null);
+                    }}
+                    className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-sm outline-none focus:border-[#0f9f99]"
+                  >
+                    <option value="">すべて</option>
+                    {genderOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-[#475569]">来店回数（複数選択）</p>
+                  <div className="flex flex-wrap gap-2">
+                    {visitCountSegmentOptions.map((segment) => {
+                      const checked = targetVisitCountSegments.includes(segment.value);
+                      return (
+                        <button
+                          key={segment.value}
+                          type="button"
+                          onClick={() => toggleVisitCountTarget(segment.value)}
+                          className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                            checked
+                              ? "border-[#0f766e] bg-[#ccfbf1] text-[#0f766e]"
+                              : "border-[#cbd5e1] bg-white text-[#475569]"
+                          }`}
+                        >
+                          {segment.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+            )}
           </div>
 
           <aside className="bg-[#9db8de] p-4">

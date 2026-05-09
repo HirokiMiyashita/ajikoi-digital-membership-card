@@ -43,7 +43,7 @@ type Props = {
 export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
   const adminUser = await requireAdminUser();
   const { triggerId } = await params;
-  const [trigger, gifts, templates] = await Promise.all([
+  const [trigger, gifts, templates, ranks] = await Promise.all([
     prisma.lineDeliveryTriggerSetting.findFirst({
       where: {
         id: triggerId,
@@ -56,6 +56,9 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
         notificationText: true,
         messages: true,
         message: true,
+        targetRankIds: true,
+        targetGender: true,
+        targetVisitCountSegments: true,
         isActive: true,
       },
     }),
@@ -76,6 +79,14 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
       },
       take: 100,
     }),
+    prisma.rank.findMany({
+      orderBy: { minPoints: "asc" },
+      select: {
+        id: true,
+        name: true,
+      },
+      take: 50,
+    }),
   ]);
   if (!trigger) {
     notFound();
@@ -92,6 +103,7 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
   return (
     <TriggerDeliveryEditorClient
       gifts={normalizedGifts}
+      rankOptions={ranks}
       mode="edit"
       triggerId={trigger.id}
       initialValue={{
@@ -100,6 +112,11 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
         notificationText: trigger.notificationText,
         messages: trigger.messages,
         message: trigger.message,
+        targetRankIds: trigger.targetRankIds,
+        targetGender: (trigger.targetGender as "male" | "female" | "other" | null) ?? null,
+        targetVisitCountSegments: trigger.targetVisitCountSegments as Array<
+          "ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE"
+        >,
         isActive: trigger.isActive,
       }}
     />
