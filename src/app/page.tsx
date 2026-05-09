@@ -212,50 +212,50 @@ export default function Home() {
 
         // 起動時はまず users テーブル同期まで戻す（段階的に機能を戻す）
         setProfile(userProfile);
-        const syncResult = await rpcClient.user.getFromLiff({
+        // const syncResult = await rpcClient.user.getFromLiff({
+        //   userId: userProfile.userId,
+        //   displayName: userProfile.displayName,
+        // });
+        const syncResult = await rpcClient.user.upsertFromLiff({
           userId: userProfile.userId,
           displayName: userProfile.displayName,
         });
         const syncedAt = performance.now();
-        // const syncResult = await rpcClient.user.upsertFromLiff({
-        //   userId: userProfile.userId,
-        //   displayName: userProfile.displayName,
-        // });
         setPoints(syncResult.points);
         setUserRole(syncResult.role);
         setCurrentRankName(syncResult.currentRankName);
         setNextRankName(syncResult.nextRankName);
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
-        // const publicStoreStatusPromise = rpcClient.user.getStoreStatus({});
-        // if (syncResult.role === "staff") {
-        //   setPendingSurvey(false);
-        // } else if (syncResult.hasSurvey) {
-        //   setPendingSurvey(false);
-        // } else {
-        //   const surveyConfigResult = await rpcClient.user.getOnboardingSurveyQuestions({});
-        //   const questions = surveyConfigResult.questions as SurveyQuestionConfig[];
-        //   const activeQuestions = questions
-        //     .filter((question: SurveyQuestionConfig) => question.isEnabled)
-        //     .sort((a: SurveyQuestionConfig, b: SurveyQuestionConfig) => a.sortOrder - b.sortOrder);
-        //   setSurveyQuestions(questions.length > 0 ? questions : defaultSurveyQuestions);
-        //   setPendingSurvey(activeQuestions.length > 0);
-        // }
-        // setNeedsSurvey(false);
-        // if (syncResult.role === "staff") {
-        //   const staffStatus = await rpcClient.user.getStaffStoreStatus({
-        //     userId: userProfile.userId,
-        //   });
-        //   setIsStaffPortal(staffStatus.authorized);
-        //   setStaffStoreIsOpen(staffStatus.isOpen);
-        //   setStaffCanOpen(staffStatus.canOpen);
-        //   setStaffCanClose(staffStatus.canClose);
-        // } else {
-        //   setIsStaffPortal(false);
-        //   setStaffStoreIsOpen(false);
-        //   setStaffCanOpen(false);
-        //   setStaffCanClose(false);
-        // }
+        const publicStoreStatusPromise = rpcClient.user.getStoreStatus({});
+        if (syncResult.role === "staff") {
+          setPendingSurvey(false);
+        } else if (syncResult.hasSurvey) {
+          setPendingSurvey(false);
+        } else {
+          const surveyConfigResult = await rpcClient.user.getOnboardingSurveyQuestions({});
+          const questions = surveyConfigResult.questions as SurveyQuestionConfig[];
+          const activeQuestions = questions
+            .filter((question: SurveyQuestionConfig) => question.isEnabled)
+            .sort((a: SurveyQuestionConfig, b: SurveyQuestionConfig) => a.sortOrder - b.sortOrder);
+          setSurveyQuestions(questions.length > 0 ? questions : defaultSurveyQuestions);
+          setPendingSurvey(activeQuestions.length > 0);
+        }
+        setNeedsSurvey(false);
+        if (syncResult.role === "staff") {
+          const staffStatus = await rpcClient.user.getStaffStoreStatus({
+            userId: userProfile.userId,
+          });
+          setIsStaffPortal(staffStatus.authorized);
+          setStaffStoreIsOpen(staffStatus.isOpen);
+          setStaffCanOpen(staffStatus.canOpen);
+          setStaffCanClose(staffStatus.canClose);
+        } else {
+          setIsStaffPortal(false);
+          setStaffStoreIsOpen(false);
+          setStaffCanOpen(false);
+          setStaffCanClose(false);
+        }
         if (syncResult.checkedInToday) {
           setScanMessage("本日の入店ポイントは付与済みです。");
         }
@@ -269,7 +269,7 @@ export default function Home() {
           importLiff: Math.round(importedAt - importStartedAt),
           liffInit: Math.round(initializedAt - importedAt),
           getProfile: Math.round(profileFetchedAt - initializedAt),
-          getFromLiff: Math.round(syncedAt - profileFetchedAt),
+          upsertFromLiff: Math.round(syncedAt - profileFetchedAt),
           totalToReady: Math.round(syncedAt - importStartedAt),
         });
       } catch (error) {
@@ -287,77 +287,77 @@ export default function Home() {
     };
   }, [liffId]);
 
-  // useEffect(() => {
-  //   if (!profile || typeof window === "undefined") return;
-  //   if (userRole === "staff" || isStaffPortal) {
-  //     setNeedsSurvey(false);
-  //     return;
-  //   }
-  //
-  //   const url = new URL(window.location.href);
-  //   const checkinToken = url.searchParams.get("checkinToken")?.trim() ?? "";
-  //   if (!checkinToken) {
-  //     setNeedsSurvey(pendingSurvey);
-  //     return;
-  //   }
-  //   if (autoCheckinTokenRef.current === checkinToken) {
-  //     setNeedsSurvey(pendingSurvey);
-  //     return;
-  //   }
-  //   autoCheckinTokenRef.current = checkinToken;
-  //
-  //   // 同日付与済みならAPIを叩かず即時終了する
-  //   if (checkedInToday) {
-  //     setScanMessage("本日の入店ポイントは付与済みです。");
-  //     url.searchParams.delete("checkinToken");
-  //     window.history.replaceState({}, "", url.toString());
-  //     setNeedsSurvey(pendingSurveyRef.current);
-  //     return;
-  //   }
-  //
-  //   const runAutoCheckin = async () => {
-  //     setIsAutoCheckinProcessing(true);
-  //     setScanMessage("来店ポイントを付与しています...");
-  //     setGachaPopup({ open: false, won: false, giftTitle: null });
-  //     try {
-  //       setIsGachaJudging(true);
-  //       const result = await rpcClient.user.addVisitPoint({
-  //         userId: profile.userId,
-  //         qrValue: checkinToken,
-  //       });
-  //       setPoints(result.points);
-  //       setCurrentRankName(result.currentRankName);
-  //       setNextRankName(result.nextRankName);
-  //       setPointsToNextRank(result.pointsToNextRank);
-  //       setCheckedInToday(result.checkedInToday);
-  //       const giftSuffix =
-  //         result.grantedGiftTitles.length > 0
-  //           ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
-  //           : "";
-  //       if (result.gacha?.executed) {
-  //         setGachaPopup({
-  //           open: true,
-  //           won: result.gacha.won,
-  //           giftTitle: result.gacha.giftTitle ?? null,
-  //         });
-  //         setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャ結果を確認してください。`);
-  //       } else {
-  //         setScanMessage(`+1ポイントを付与しました。${giftSuffix}`.trim());
-  //       }
-  //       await fetchOwnedGifts(profile.userId);
-  //     } catch (error) {
-  //       setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
-  //     } finally {
-  //       setIsGachaJudging(false);
-  //       setIsAutoCheckinProcessing(false);
-  //       url.searchParams.delete("checkinToken");
-  //       window.history.replaceState({}, "", url.toString());
-  //       setNeedsSurvey(pendingSurveyRef.current);
-  //     }
-  //   };
-  //
-  //   void runAutoCheckin();
-  // }, [checkedInToday, isStaffPortal, pendingSurvey, profile, userRole]);
+  useEffect(() => {
+    if (!profile || typeof window === "undefined") return;
+    if (userRole === "staff" || isStaffPortal) {
+      setNeedsSurvey(false);
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    const checkinToken = url.searchParams.get("checkinToken")?.trim() ?? "";
+    if (!checkinToken) {
+      setNeedsSurvey(pendingSurvey);
+      return;
+    }
+    if (autoCheckinTokenRef.current === checkinToken) {
+      setNeedsSurvey(pendingSurvey);
+      return;
+    }
+    autoCheckinTokenRef.current = checkinToken;
+
+    // 同日付与済みならAPIを叩かず即時終了する
+    if (checkedInToday) {
+      setScanMessage("本日の入店ポイントは付与済みです。");
+      url.searchParams.delete("checkinToken");
+      window.history.replaceState({}, "", url.toString());
+      setNeedsSurvey(pendingSurveyRef.current);
+      return;
+    }
+
+    const runAutoCheckin = async () => {
+      setIsAutoCheckinProcessing(true);
+      setScanMessage("来店ポイントを付与しています...");
+      setGachaPopup({ open: false, won: false, giftTitle: null });
+      try {
+        setIsGachaJudging(true);
+        const result = await rpcClient.user.addVisitPoint({
+          userId: profile.userId,
+          qrValue: checkinToken,
+        });
+        setPoints(result.points);
+        setCurrentRankName(result.currentRankName);
+        setNextRankName(result.nextRankName);
+        setPointsToNextRank(result.pointsToNextRank);
+        setCheckedInToday(result.checkedInToday);
+        const giftSuffix =
+          result.grantedGiftTitles.length > 0
+            ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
+            : "";
+        if (result.gacha?.executed) {
+          setGachaPopup({
+            open: true,
+            won: result.gacha.won,
+            giftTitle: result.gacha.giftTitle ?? null,
+          });
+          setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャ結果を確認してください。`);
+        } else {
+          setScanMessage(`+1ポイントを付与しました。${giftSuffix}`.trim());
+        }
+        await fetchOwnedGifts(profile.userId);
+      } catch (error) {
+        setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
+      } finally {
+        setIsGachaJudging(false);
+        setIsAutoCheckinProcessing(false);
+        url.searchParams.delete("checkinToken");
+        window.history.replaceState({}, "", url.toString());
+        setNeedsSurvey(pendingSurveyRef.current);
+      }
+    };
+
+    void runAutoCheckin();
+  }, [checkedInToday, isStaffPortal, pendingSurvey, profile, userRole]);
 
   useEffect(() => {
     const claimGiftFromQuery = async () => {
