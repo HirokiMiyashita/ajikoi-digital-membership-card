@@ -210,19 +210,19 @@ export default function Home() {
           return;
         }
 
-        // 起動時はLIFFプロフィールだけを取得する（段階的に機能を戻すため）
+        // 起動時はまず users テーブル同期まで戻す（段階的に機能を戻す）
         setProfile(userProfile);
-        // 一時停止中: 初期RPC同期（段階的に戻す）
-        // const syncResult = await rpcClient.user.upsertFromLiff({
-        //   userId: userProfile.userId,
-        //   displayName: userProfile.displayName,
-        // });
-        // setPoints(syncResult.points);
-        // setUserRole(syncResult.role);
-        // setCurrentRankName(syncResult.currentRankName);
-        // setNextRankName(syncResult.nextRankName);
-        // setPointsToNextRank(syncResult.pointsToNextRank);
-        // setCheckedInToday(syncResult.checkedInToday);
+        const syncResult = await rpcClient.user.upsertFromLiff({
+          userId: userProfile.userId,
+          displayName: userProfile.displayName,
+        });
+        const syncedAt = performance.now();
+        setPoints(syncResult.points);
+        setUserRole(syncResult.role);
+        setCurrentRankName(syncResult.currentRankName);
+        setNextRankName(syncResult.nextRankName);
+        setPointsToNextRank(syncResult.pointsToNextRank);
+        setCheckedInToday(syncResult.checkedInToday);
         // const publicStoreStatusPromise = rpcClient.user.getStoreStatus({});
         // if (syncResult.role === "staff") {
         //   setPendingSurvey(false);
@@ -252,20 +252,21 @@ export default function Home() {
         //   setStaffCanOpen(false);
         //   setStaffCanClose(false);
         // }
-        // if (syncResult.checkedInToday) {
-        //   setScanMessage("本日の入店ポイントは付与済みです。");
-        // }
-        // if (syncResult.signupGiftTitle) {
-        //   setToastMessage(`会員登録特典「${syncResult.signupGiftTitle}」を獲得しました。`);
-        //   setTimeout(() => setToastMessage(null), 2600);
-        // }
+        if (syncResult.checkedInToday) {
+          setScanMessage("本日の入店ポイントは付与済みです。");
+        }
+        if (syncResult.signupGiftTitle) {
+          setToastMessage(`会員登録特典「${syncResult.signupGiftTitle}」を獲得しました。`);
+          setTimeout(() => setToastMessage(null), 2600);
+        }
         // void fetchOwnedGifts(userProfile.userId);
         setIsProfileLoading(false);
         console.info("[liff-init-ms]", {
           importLiff: Math.round(importedAt - importStartedAt),
           liffInit: Math.round(initializedAt - importedAt),
           getProfile: Math.round(profileFetchedAt - initializedAt),
-          totalToReady: Math.round(profileFetchedAt - importStartedAt),
+          upsertFromLiff: Math.round(syncedAt - profileFetchedAt),
+          totalToReady: Math.round(syncedAt - importStartedAt),
         });
       } catch (error) {
         console.error(error);
