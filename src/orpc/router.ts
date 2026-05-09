@@ -25,7 +25,12 @@ let officialAccountCache: { id: string | null; expiresAt: number } | null = null
 const RANK_CACHE_TTL_MS = 5 * 60 * 1000;
 const SIGNUP_INITIAL_POINTS = 1;
 type GiftExpiryTypeValue = "DAYS_AFTER_ISSUE" | "FIXED_DATE";
-type LineDeliveryTriggerTypeValue = "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
+type LineDeliveryTriggerTypeValue =
+  | "USER_SIGNUP"
+  | "CHECKIN_POINT_GRANTED"
+  | "RANK_UP"
+  | "BIRTHDAY"
+  | "GIFT_EXPIRES";
 type DeliveryVisitCountSegmentValue = "ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE";
 type UserRoleValue = "staff";
 type CachedRank = {
@@ -453,6 +458,32 @@ async function sendLineDeliveryTriggers(params: {
   targetUserId: string;
 }) {
   try {
+    const toScheduledAt = (delayDays: number, deliveryHourJst: number | null) => {
+      if (delayDays <= 0 && deliveryHourJst === null) {
+        return null;
+      }
+      const jstOffsetMs = 9 * 60 * 60 * 1000;
+      const now = new Date();
+      if (deliveryHourJst === null) {
+        return new Date(now.getTime() + delayDays * 24 * 60 * 60 * 1000).toISOString();
+      }
+      const jstNow = new Date(now.getTime() + jstOffsetMs);
+      const jstDate = new Date(
+        Date.UTC(
+          jstNow.getUTCFullYear(),
+          jstNow.getUTCMonth(),
+          jstNow.getUTCDate() + delayDays,
+          deliveryHourJst,
+          0,
+          0,
+          0,
+        ) - jstOffsetMs,
+      );
+      if (jstDate.getTime() <= now.getTime()) {
+        return new Date(jstDate.getTime() + 24 * 60 * 60 * 1000).toISOString();
+      }
+      return jstDate.toISOString();
+    };
     const resolveVisitCountSegment = (checkInCount: number): DeliveryVisitCountSegmentValue => {
       if (checkInCount <= 0) return "ZERO";
       if (checkInCount === 1) return "ONE";
@@ -478,6 +509,8 @@ async function sendLineDeliveryTriggers(params: {
         targetRankIds: true,
         targetGender: true,
         targetVisitCountSegments: true,
+        delayDays: true,
+        deliveryHourJst: true,
       },
       take: 20,
     });
@@ -542,6 +575,7 @@ async function sendLineDeliveryTriggers(params: {
                 ],
             officialAccountId: params.officialAccountId,
             targetUserIds: [params.targetUserId],
+            scheduledAt: toScheduledAt(setting.delayDays, setting.deliveryHourJst),
             triggeredBy: `system:${params.triggerType.toLowerCase()}`,
           },
         }),

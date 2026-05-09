@@ -59,6 +59,8 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
         targetRankIds: true,
         targetGender: true,
         targetVisitCountSegments: true,
+        delayDays: true,
+        deliveryHourJst: true,
         isActive: true,
       },
     }),
@@ -108,7 +110,12 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
       triggerId={trigger.id}
       initialValue={{
         title: trigger.title,
-        triggerType: trigger.triggerType as "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP",
+        triggerType: trigger.triggerType as
+          | "USER_SIGNUP"
+          | "CHECKIN_POINT_GRANTED"
+          | "RANK_UP"
+          | "BIRTHDAY"
+          | "GIFT_EXPIRES",
         notificationText: trigger.notificationText,
         messages: trigger.messages,
         message: trigger.message,
@@ -117,6 +124,8 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
         targetVisitCountSegments: trigger.targetVisitCountSegments as Array<
           "ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE"
         >,
+        delayDays: trigger.delayDays,
+        deliveryHourJst: trigger.deliveryHourJst,
         isActive: trigger.isActive,
       }}
     />

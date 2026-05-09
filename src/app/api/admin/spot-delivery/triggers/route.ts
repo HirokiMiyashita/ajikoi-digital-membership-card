@@ -6,35 +6,50 @@ import { z } from "zod";
 import { adminAuth } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
-const triggerSettingSchema = z.object({
-  title: z.string().trim().min(1, "タイトルを入力してください。"),
-  triggerType: z.nativeEnum(LineDeliveryTriggerType),
-  notificationText: z.string().trim().max(1000, "通知テキストは1000文字以内です。").optional().default(""),
-  messages: z
-    .array(
-      z.union([
-        z.object({
-          type: z.literal("text"),
-          text: z.string().trim().min(1).max(1000),
-        }),
-        z.object({
-          type: z.literal("image"),
-          originalContentUrl: z.string().url(),
-          previewImageUrl: z.string().url(),
-        }),
-        z.object({
-          type: z.literal("flex"),
-          altText: z.string().trim().min(1).max(400),
-          contents: z.record(z.string(), z.unknown()),
-        }),
-      ]),
-    )
-    .min(1, "配信メッセージを1つ以上追加してください。"),
-  targetRankIds: z.array(z.string().min(1)).max(20).optional().default([]),
-  targetGender: z.enum(["male", "female", "other"]).nullable().optional().default(null),
-  targetVisitCountSegments: z.array(z.nativeEnum(DeliveryVisitCountSegment)).max(10).optional().default([]),
-  isActive: z.boolean().optional().default(true),
-});
+const triggerSettingSchema = z
+  .object({
+    title: z.string().trim().min(1, "タイトルを入力してください。"),
+    triggerType: z.nativeEnum(LineDeliveryTriggerType),
+    notificationText: z.string().trim().max(1000, "通知テキストは1000文字以内です。").optional().default(""),
+    messages: z
+      .array(
+        z.union([
+          z.object({
+            type: z.literal("text"),
+            text: z.string().trim().min(1).max(1000),
+          }),
+          z.object({
+            type: z.literal("image"),
+            originalContentUrl: z.string().url(),
+            previewImageUrl: z.string().url(),
+          }),
+          z.object({
+            type: z.literal("flex"),
+            altText: z.string().trim().min(1).max(400),
+            contents: z.record(z.string(), z.unknown()),
+          }),
+        ]),
+      )
+      .min(1, "配信メッセージを1つ以上追加してください。"),
+    targetRankIds: z.array(z.string().min(1)).max(20).optional().default([]),
+    targetGender: z.enum(["male", "female", "other"]).nullable().optional().default(null),
+    targetVisitCountSegments: z.array(z.nativeEnum(DeliveryVisitCountSegment)).max(10).optional().default([]),
+    delayDays: z.number().int().min(-365).max(365).optional().default(0),
+    deliveryHourJst: z.number().int().min(0).max(23).nullable().optional().default(null),
+    isActive: z.boolean().optional().default(true),
+  })
+  .superRefine((value, ctx) => {
+    const canUseNegativeDelay =
+      value.triggerType === LineDeliveryTriggerType.BIRTHDAY ||
+      value.triggerType === LineDeliveryTriggerType.GIFT_EXPIRES;
+    if (!canUseNegativeDelay && value.delayDays < 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "負数の日数は誕生日/ギフト期限切れトリガーでのみ設定できます。",
+        path: ["delayDays"],
+      });
+    }
+  });
 
 export async function POST(request: Request) {
   try {
@@ -75,6 +90,8 @@ export async function POST(request: Request) {
         targetRankIds: parsed.data.targetRankIds,
         targetGender: parsed.data.targetGender,
         targetVisitCountSegments: parsed.data.targetVisitCountSegments,
+        delayDays: parsed.data.delayDays,
+        deliveryHourJst: parsed.data.deliveryHourJst,
         isActive: parsed.data.isActive,
       },
     });

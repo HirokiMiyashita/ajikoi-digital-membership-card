@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type TriggerType = "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
+type TriggerType = "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP" | "BIRTHDAY" | "GIFT_EXPIRES";
 type DeliveryVisitCountSegment = "ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE";
 type LineTextMessage = { type: "text"; text: string };
 type LineImageMessage = { type: "image"; originalContentUrl: string; previewImageUrl: string };
@@ -33,6 +33,8 @@ type Props = {
     targetRankIds?: string[];
     targetGender?: "male" | "female" | "other" | null;
     targetVisitCountSegments?: DeliveryVisitCountSegment[];
+    delayDays?: number;
+    deliveryHourJst?: number | null;
     isActive: boolean;
   };
 };
@@ -112,6 +114,8 @@ export default function TriggerDeliveryEditorClient({
   const [targetVisitCountSegments, setTargetVisitCountSegments] = useState<DeliveryVisitCountSegment[]>(
     initialValue?.targetVisitCountSegments ?? [],
   );
+  const [delayDays, setDelayDays] = useState<number>(initialValue?.delayDays ?? 0);
+  const [deliveryHourJst, setDeliveryHourJst] = useState<number | null>(initialValue?.deliveryHourJst ?? null);
   const [isActive, setIsActive] = useState(initialValue?.isActive ?? true);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -160,6 +164,12 @@ export default function TriggerDeliveryEditorClient({
     },
     [imagePreviewUrl],
   );
+  useEffect(() => {
+    const allowNegative = triggerType === "BIRTHDAY" || triggerType === "GIFT_EXPIRES";
+    if (!allowNegative && delayDays < 0) {
+      setDelayDays(0);
+    }
+  }, [triggerType, delayDays]);
 
   const openImagePicker = () => {
     setShowImageElement(true);
@@ -287,7 +297,10 @@ export default function TriggerDeliveryEditorClient({
     USER_SIGNUP: "会員登録時",
     CHECKIN_POINT_GRANTED: "来店ポイント付与時",
     RANK_UP: "ランクアップ時",
+    BIRTHDAY: "誕生日",
+    GIFT_EXPIRES: "ギフト期限切れ",
   };
+  const canUseNegativeDelay = triggerType === "BIRTHDAY" || triggerType === "GIFT_EXPIRES";
   const genderOptions: Array<{ value: "male" | "female" | "other"; label: string }> = [
     { value: "male", label: "男性" },
     { value: "female", label: "女性" },
@@ -342,6 +355,8 @@ export default function TriggerDeliveryEditorClient({
           targetRankIds,
           targetGender,
           targetVisitCountSegments,
+          delayDays,
+          deliveryHourJst,
           isActive,
         }),
       });
@@ -442,8 +457,46 @@ export default function TriggerDeliveryEditorClient({
                   <option value="USER_SIGNUP">会員登録時</option>
                   <option value="CHECKIN_POINT_GRANTED">来店ポイント付与時</option>
                   <option value="RANK_UP">ランクアップ時</option>
+                  <option value="BIRTHDAY">誕生日</option>
+                  <option value="GIFT_EXPIRES">ギフト期限切れ</option>
                 </select>
               </label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-[#475569]">
+                    トリガーからの日数（負数: n日前）
+                  </span>
+                  <input
+                    type="number"
+                    min={canUseNegativeDelay ? -365 : 0}
+                    max={365}
+                    value={delayDays}
+                    onChange={(event) => {
+                      const min = canUseNegativeDelay ? -365 : 0;
+                      setDelayDays(Math.max(min, Math.min(365, Number(event.target.value || 0))));
+                    }}
+                    className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-sm outline-none focus:border-[#0f9f99]"
+                  />
+                </label>
+                <label className="block space-y-1">
+                  <span className="text-xs font-semibold text-[#475569]">配信時刻（JST）</span>
+                  <select
+                    value={deliveryHourJst === null ? "" : String(deliveryHourJst)}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      setDeliveryHourJst(raw === "" ? null : Number(raw));
+                    }}
+                    className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-sm outline-none focus:border-[#0f9f99]"
+                  >
+                    <option value="">即時配信</option>
+                    {Array.from({ length: 24 }).map((_, hour) => (
+                      <option key={hour} value={hour}>
+                        {`${String(hour).padStart(2, "0")}:00`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <label className="flex items-center gap-2 text-sm text-[#334155]">
                 <input
                   type="checkbox"

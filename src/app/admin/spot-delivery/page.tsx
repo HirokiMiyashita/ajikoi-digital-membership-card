@@ -68,6 +68,8 @@ export default async function AdminSpotDeliveryPage() {
         targetRankIds: true,
         targetGender: true,
         targetVisitCountSegments: true,
+        delayDays: true,
+        deliveryHourJst: true,
         isActive: true,
         updatedAt: true,
       },
@@ -123,6 +125,8 @@ export default async function AdminSpotDeliveryPage() {
         targetRankIds: row.targetRankIds,
         targetGender: row.targetGender,
         targetVisitCountSegments: row.targetVisitCountSegments,
+        delayDays: row.delayDays,
+        deliveryHourJst: row.deliveryHourJst,
         isActive: row.isActive,
         updatedAt: row.updatedAt.toISOString(),
       }))}

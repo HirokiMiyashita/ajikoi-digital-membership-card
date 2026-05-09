@@ -27,6 +27,7 @@ const triggerLineDeliveryPayloadSchema = z.object({
     .min(1),
   officialAccountId: z.string().nullable(),
   targetUserIds: z.array(z.string().min(1)).optional().default([]),
+  scheduledAt: z.string().datetime().nullable().optional().default(null),
   triggeredBy: z.string().min(1),
 });
 
@@ -50,9 +51,16 @@ export const triggerLineDelivery = inngest.createFunction(
     triggers: [{ event: "line/delivery.triggered" }],
   },
   async ({ event, step }) => {
-    const { title, notificationText, messages, officialAccountId, targetUserIds, triggeredBy } =
+    const { title, notificationText, messages, officialAccountId, targetUserIds, scheduledAt, triggeredBy } =
       triggerLineDeliveryPayloadSchema.parse((event as { data: unknown }).data);
     const aggregationUnit = createAggregationUnit();
+
+    if (scheduledAt) {
+      const scheduledDate = new Date(scheduledAt);
+      if (!Number.isNaN(scheduledDate.getTime()) && scheduledDate.getTime() > Date.now()) {
+        await step.sleepUntil("wait-until-scheduled-time", scheduledDate);
+      }
+    }
 
     const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
     if (!accessToken) {

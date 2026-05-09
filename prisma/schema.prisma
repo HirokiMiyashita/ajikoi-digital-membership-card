@@ -260,6 +260,8 @@ enum LineDeliveryTriggerType {
   USER_SIGNUP
   CHECKIN_POINT_GRANTED
   RANK_UP
+  BIRTHDAY
+  GIFT_EXPIRES
 }
 
 enum DeliveryVisitCountSegment {
@@ -281,6 +283,8 @@ model LineDeliveryTriggerSetting {
   targetRankIds            String[]                    @default([])
   targetGender             String?
   targetVisitCountSegments DeliveryVisitCountSegment[] @default([])
+  delayDays                Int                         @default(0)
+  deliveryHourJst          Int?
   isActive                 Boolean                     @default(true)
   officialAccount          OfficialAccount?            @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
   createdAt                DateTime                    @default(now())

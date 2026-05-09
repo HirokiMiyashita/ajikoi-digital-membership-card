@@ -13,13 +13,15 @@ type DeliveryHistory = {
 type TriggerSetting = {
   id: string;
   title: string;
-  triggerType: "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
+  triggerType: "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP" | "BIRTHDAY" | "GIFT_EXPIRES";
   notificationText: string;
   messages: unknown;
   message: string;
   targetRankIds: string[];
   targetGender: string | null;
   targetVisitCountSegments: Array<"ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE">;
+  delayDays: number;
+  deliveryHourJst: number | null;
   isActive: boolean;
   updatedAt: string;
 };
@@ -55,7 +57,9 @@ function resolveStatus(sent: number, failed: number) {
 function formatTriggerType(triggerType: TriggerSetting["triggerType"]) {
   if (triggerType === "USER_SIGNUP") return "会員登録時";
   if (triggerType === "CHECKIN_POINT_GRANTED") return "来店ポイント付与時";
-  return "ランクアップ時";
+  if (triggerType === "RANK_UP") return "ランクアップ時";
+  if (triggerType === "BIRTHDAY") return "誕生日";
+  return "ギフト期限切れ";
 }
 
 export default function SpotDeliveryClient({
@@ -85,6 +89,8 @@ export default function SpotDeliveryClient({
           targetRankIds: row.targetRankIds,
           targetGender: row.targetGender,
           targetVisitCountSegments: row.targetVisitCountSegments,
+          delayDays: row.delayDays,
+          deliveryHourJst: row.deliveryHourJst,
           isActive: !row.isActive,
         }),
       });

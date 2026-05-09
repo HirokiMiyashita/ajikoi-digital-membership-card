@@ -34,6 +34,8 @@ const triggerSettingSchema = z.object({
   targetRankIds: z.array(z.string().min(1)).max(20).optional(),
   targetGender: z.enum(["male", "female", "other"]).nullable().optional(),
   targetVisitCountSegments: z.array(z.nativeEnum(DeliveryVisitCountSegment)).max(10).optional(),
+  delayDays: z.number().int().min(-365).max(365).optional(),
+  deliveryHourJst: z.number().int().min(0).max(23).nullable().optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -92,6 +94,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         targetRankIds: true,
         targetGender: true,
         targetVisitCountSegments: true,
+        delayDays: true,
+        deliveryHourJst: true,
         isActive: true,
       },
     });
@@ -110,6 +114,18 @@ export async function PATCH(request: Request, context: RouteContext) {
       parsed.data.targetGender !== undefined ? parsed.data.targetGender : target.targetGender;
     const nextTargetVisitCountSegments =
       parsed.data.targetVisitCountSegments ?? target.targetVisitCountSegments;
+    const nextDelayDays = parsed.data.delayDays ?? target.delayDays;
+    const nextDeliveryHourJst =
+      parsed.data.deliveryHourJst !== undefined ? parsed.data.deliveryHourJst : target.deliveryHourJst;
+    const canUseNegativeDelay =
+      nextTriggerType === LineDeliveryTriggerType.BIRTHDAY ||
+      nextTriggerType === LineDeliveryTriggerType.GIFT_EXPIRES;
+    if (!canUseNegativeDelay && nextDelayDays < 0) {
+      return NextResponse.json(
+        { ok: false, message: "負数の日数は誕生日/ギフト期限切れトリガーでのみ設定できます。" },
+        { status: 400 },
+      );
+    }
     const nextIsActive = parsed.data.isActive ?? target.isActive;
     await prisma.lineDeliveryTriggerSetting.update({
       where: { id: triggerId },
@@ -124,6 +140,8 @@ export async function PATCH(request: Request, context: RouteContext) {
         targetRankIds: nextTargetRankIds,
         targetGender: nextTargetGender,
         targetVisitCountSegments: nextTargetVisitCountSegments,
+        delayDays: nextDelayDays,
+        deliveryHourJst: nextDeliveryHourJst,
         isActive: nextIsActive,
       },
     });
