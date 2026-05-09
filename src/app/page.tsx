@@ -16,6 +16,16 @@ type GachaPopupState = {
   won: boolean;
   giftTitle: string | null;
 };
+type GachaStartPopupState = {
+  open: boolean;
+  winProbability: number;
+  previewGift: {
+    title: string;
+    usageGuide: string;
+    imageUrl: string;
+    expiresLabel: string | null;
+  } | null;
+};
 type OwnedGift = {
   userGiftId: string;
   giftId: string;
@@ -152,6 +162,11 @@ export default function Home() {
     open: false,
     won: false,
     giftTitle: null,
+  });
+  const [gachaStartPopup, setGachaStartPopup] = useState<GachaStartPopupState>({
+    open: false,
+    winProbability: 0,
+    previewGift: null,
   });
   const [needsSurvey, setNeedsSurvey] = useState(false);
   const [surveyStep, setSurveyStep] = useState(0);
@@ -333,6 +348,7 @@ export default function Home() {
     const runAutoCheckin = async () => {
       setIsAutoCheckinProcessing(true);
       setScanMessage("来店ポイントを付与しています...");
+      setGachaStartPopup({ open: false, winProbability: 0, previewGift: null });
       setGachaPopup({ open: false, won: false, giftTitle: null });
       try {
         setIsGachaJudging(true);
@@ -350,12 +366,17 @@ export default function Home() {
             ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
             : "";
         if (result.gacha?.executed) {
-          setGachaPopup({
+          setGachaStartPopup({
             open: true,
+            winProbability: result.gacha.winProbability,
+            previewGift: result.gacha.previewGift ?? null,
+          });
+          setGachaPopup({
+            open: false,
             won: result.gacha.won,
             giftTitle: result.gacha.giftTitle ?? null,
           });
-          setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャ結果を確認してください。`);
+          setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャにチャレンジしてください。`);
         } else {
           setScanMessage(`+1ポイントを付与しました。${giftSuffix}`.trim());
         }
@@ -464,6 +485,11 @@ export default function Home() {
 
   const handleCloseGachaPopup = () => {
     setGachaPopup((prev) => ({ ...prev, open: false }));
+  };
+
+  const handleStartGachaChallenge = () => {
+    setGachaStartPopup({ open: false, winProbability: 0, previewGift: null });
+    setGachaPopup((prev) => ({ ...prev, open: true }));
   };
 
   const handleSubmitReviewPassword = async () => {
@@ -823,6 +849,56 @@ export default function Home() {
               閉じる
             </button>
           </section>
+        </div>
+      ) : null}
+      {gachaStartPopup.open ? (
+        <div className="fixed inset-0 z-56 flex items-center justify-center bg-black/35 px-6">
+          <div className="w-full max-w-sm">
+            <p className="mx-auto w-fit rounded-full bg-white px-4 py-1 text-base font-bold text-[#0f172a]">
+              来店するたびチャレンジ
+            </p>
+            <p className="mt-2 text-center text-[18px] font-extrabold leading-tight text-white drop-shadow">
+              あたりがでたら特典GET
+            </p>
+            <section className="mt-3 overflow-hidden rounded-2xl bg-white shadow-xl">
+              <div className="bg-[#dff3eb] p-4">
+                {gachaStartPopup.previewGift?.imageUrl ? (
+                  <img
+                    src={gachaStartPopup.previewGift.imageUrl}
+                    alt={gachaStartPopup.previewGift.title}
+                    className="h-56 w-full rounded-lg object-cover"
+                  />
+                ) : (
+                  <div className="flex h-56 w-full items-center justify-center rounded-lg bg-[#c8e8dc] text-lg font-bold text-[#10b981]">
+                    ガチャ特典
+                  </div>
+                )}
+              </div>
+              <div className="px-5 pb-5 pt-4">
+                <p className="text-5 leading-tight font-bold text-[#0f172a]">
+                  {gachaStartPopup.previewGift?.title ?? "ガチャ特典"}
+                </p>
+                {gachaStartPopup.previewGift?.expiresLabel ? (
+                  <p className="mt-2 text-sm text-[#334155]">{gachaStartPopup.previewGift.expiresLabel}</p>
+                ) : null}
+                {gachaStartPopup.previewGift?.usageGuide ? (
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#6b7280]">
+                    {gachaStartPopup.previewGift.usageGuide}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={handleStartGachaChallenge}
+                  className="mt-5 w-full rounded-lg bg-[#f43f5e] py-3 text-base font-bold text-white"
+                >
+                  抽選にチャレンジ
+                </button>
+              </div>
+            </section>
+            <p className="pt-3 text-center text-sm font-semibold text-white drop-shadow">
+              ※当選確率は{gachaStartPopup.winProbability}%です
+            </p>
+          </div>
         </div>
       ) : null}
       {selectedGift ? (

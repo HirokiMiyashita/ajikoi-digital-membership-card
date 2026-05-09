@@ -510,7 +510,35 @@ type VisitGachaResult = {
   won: boolean;
   winProbability: number;
   giftTitle: string | null;
+  previewGift: {
+    title: string;
+    usageGuide: string;
+    imageUrl: string;
+    expiresLabel: string | null;
+  } | null;
 };
+
+function formatGiftExpiryLabel(gift: {
+  expiryType: GiftExpiryTypeValue;
+  expiryDays: number | null;
+  expiryAt: Date | null;
+}) {
+  if (gift.expiryType === "DAYS_AFTER_ISSUE") {
+    const days = gift.expiryDays ?? 0;
+    if (days > 0) {
+      return `獲得日から${days}日間有効`;
+    }
+    return null;
+  }
+  if (!gift.expiryAt) {
+    return null;
+  }
+  const date = gift.expiryAt;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}/${m}/${d} まで有効`;
+}
 
 async function runVisitGacha(userId: string, officialAccountId: string | null): Promise<VisitGachaResult> {
   const scopeKey = officialAccountId ?? "global";
@@ -530,6 +558,8 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
         select: {
           id: true,
           title: true,
+          usageGuide: true,
+          imageUrl: true,
           expiryType: true,
           expiryDays: true,
           expiryAt: true,
@@ -544,6 +574,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
       won: false,
       winProbability: 0,
       giftTitle: null,
+      previewGift: null,
     };
   }
 
@@ -558,6 +589,14 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
     : null;
   const winProbability = Math.max(0, Math.min(100, rankProbability?.winProbability ?? setting.winProbability));
   const won = Math.random() * 100 < winProbability;
+  const previewGift = setting.gift
+    ? {
+        title: setting.gift.title,
+        usageGuide: setting.gift.usageGuide,
+        imageUrl: setting.gift.imageUrl,
+        expiresLabel: formatGiftExpiryLabel(setting.gift),
+      }
+    : null;
 
   if (!won) {
     return {
@@ -565,6 +604,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
       won: false,
       winProbability,
       giftTitle: null,
+      previewGift,
     };
   }
 
@@ -575,6 +615,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
       won: false,
       winProbability,
       giftTitle: null,
+      previewGift,
     };
   }
 
@@ -595,6 +636,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
       won: false,
       winProbability,
       giftTitle: null,
+      previewGift,
     };
   }
 
@@ -611,6 +653,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
     won: true,
     winProbability,
     giftTitle: gift.title,
+    previewGift,
   };
 }
 
@@ -2105,6 +2148,7 @@ export const appRouter = {
               won: false,
               winProbability: 0,
               giftTitle: null,
+              previewGift: null,
             }
           : await runVisitGacha(updatedUser.userId, officialAccountId);
         if (gacha.executed) {
