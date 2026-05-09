@@ -37,6 +37,7 @@ export default async function AdminMemberSettingsPage() {
       where: { scopeKey },
       select: {
         signupGiftId: true,
+        reviewGiftId: true,
         topRankLoopGiftId: true,
         rankBenefitGiftSettings: {
           select: {
@@ -65,6 +66,7 @@ export default async function AdminMemberSettingsPage() {
         minPoints: rank.minPoints,
       }))}
       initialSignupGiftId={setting?.signupGiftId ?? null}
+      initialReviewGiftId={setting?.reviewGiftId ?? null}
       initialTopRankLoopGiftId={setting?.topRankLoopGiftId ?? null}
       initialRankGiftMap={rankGiftMap}
     />

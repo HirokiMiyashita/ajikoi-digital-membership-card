@@ -669,6 +669,7 @@ type UpsertedLiffUserRow = {
   role: UserRoleValue | null;
   lastCheckInAt: Date | null;
   surveyId: string | null;
+  googleReviewId: string | null;
   isNew: boolean;
 };
 
@@ -1239,7 +1240,8 @@ export const appRouter = {
               "nextRank",
               "role",
               "lastCheckInAt",
-              "surveyId"
+              "surveyId",
+              "googleReviewId"
           )
           SELECT
             u."userId",
@@ -1248,6 +1250,7 @@ export const appRouter = {
             u."role",
             u."lastCheckInAt",
             u."surveyId",
+            u."googleReviewId",
             NOT EXISTS (SELECT 1 FROM existed) AS "isNew"
           FROM upserted u
           UNION ALL
@@ -1258,6 +1261,7 @@ export const appRouter = {
             u2."role",
             u2."lastCheckInAt",
             u2."surveyId",
+            u2."googleReviewId",
             NOT EXISTS (SELECT 1 FROM existed) AS "isNew"
           FROM "users" u2
           WHERE u2."userId" = ${input.userId}
@@ -1315,6 +1319,7 @@ export const appRouter = {
           pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - user.points, 0) : 0,
           checkedInToday,
           hasSurvey: Boolean(user.surveyId),
+          hasGoogleReview: Boolean(user.googleReviewId),
           role: user.role,
           signupGiftTitle,
         };

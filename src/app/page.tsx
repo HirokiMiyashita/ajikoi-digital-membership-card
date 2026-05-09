@@ -160,10 +160,12 @@ export default function Home() {
   const [isSubmittingSurvey, setIsSubmittingSurvey] = useState(false);
   const [surveyError, setSurveyError] = useState<string | null>(null);
   const [surveyForm, setSurveyForm] = useState<Record<string, string>>({});
+  const [hasGoogleReview, setHasGoogleReview] = useState(false);
   const claimedGiftQueryRef = useRef<string | null>(null);
   const autoCheckinTokenRef = useRef<string | null>(null);
   const pendingSurveyRef = useRef(false);
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+  const googleReviewUrl = process.env.NEXT_PUBLIC_GOOGLE_REVIEW_URL ?? "";
 
   useEffect(() => {
     pendingSurveyRef.current = pendingSurvey;
@@ -223,6 +225,7 @@ export default function Home() {
         setNextRankName(syncResult.nextRankName);
         setPointsToNextRank(syncResult.pointsToNextRank);
         setCheckedInToday(syncResult.checkedInToday);
+        setHasGoogleReview(syncResult.hasGoogleReview);
         const publicStoreStatusPromise = rpcClient.user.getStoreStatus({});
         if (syncResult.role === "staff") {
           setPendingSurvey(false);
@@ -656,6 +659,33 @@ export default function Home() {
           </Link>
         </div>
       </section>
+      {!isProfileLoading && !hasGoogleReview ? (
+        <section className="mt-4 w-[94%] mx-auto overflow-hidden rounded-xl border border-[#99f6e4] bg-white shadow-sm">
+          <div className="bg-[#ccfbf1] px-4 py-2 text-center text-xs font-bold text-[#0f766e]">
+            口コミキャンペーン
+          </div>
+          <div className="px-5 py-4">
+            <p className="text-center text-lg font-bold text-[#0f172a]">
+              口コミを書いたら
+              <br />
+              <span className="text-[#0f766e]">ギフトをプレゼント！</span>
+            </p>
+            <p className="mt-2 text-center text-sm leading-6 text-[#64748b]">
+              Google口コミの投稿完了後、スタッフまでお声がけください。
+            </p>
+            {googleReviewUrl ? (
+              <a
+                href={googleReviewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 flex w-full items-center justify-center rounded-lg bg-[#14b8a6] px-4 py-3 text-sm font-bold text-white"
+              >
+                口コミを書く
+              </a>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
       <section className="mt-4 w-[94%] mx-auto">
         <h3 className="mb-3 flex items-center gap-2 text-xl font-bold text-[#111827]">
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#dcfce7] text-lg">

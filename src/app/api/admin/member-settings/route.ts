@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 
 const updateMemberSettingsSchema = z.object({
   signupGiftId: z.string().trim().min(1).nullable().optional(),
+  reviewGiftId: z.string().trim().min(1).nullable().optional(),
   topRankLoopGiftId: z.string().trim().min(1).nullable().optional(),
   rankGiftSettings: z
     .array(
@@ -45,10 +46,11 @@ export async function PATCH(request: Request) {
     }
 
     const scopeKey = adminUser.officialAccountId ?? "global";
-    const { signupGiftId, topRankLoopGiftId, rankGiftSettings } = parsed.data;
+    const { signupGiftId, reviewGiftId, topRankLoopGiftId, rankGiftSettings } = parsed.data;
 
     const requestedGiftIds = new Set<string>();
     if (typeof signupGiftId === "string") requestedGiftIds.add(signupGiftId);
+    if (typeof reviewGiftId === "string") requestedGiftIds.add(reviewGiftId);
     if (typeof topRankLoopGiftId === "string") requestedGiftIds.add(topRankLoopGiftId);
     for (const row of rankGiftSettings ?? []) {
       if (row.giftId) requestedGiftIds.add(row.giftId);
@@ -95,10 +97,14 @@ export async function PATCH(request: Request) {
 
       const settingPatch: {
         signupGiftId?: string | null;
+        reviewGiftId?: string | null;
         topRankLoopGiftId?: string | null;
       } = {};
       if (Object.prototype.hasOwnProperty.call(parsed.data, "signupGiftId")) {
         settingPatch.signupGiftId = signupGiftId ?? null;
+      }
+      if (Object.prototype.hasOwnProperty.call(parsed.data, "reviewGiftId")) {
+        settingPatch.reviewGiftId = reviewGiftId ?? null;
       }
       if (Object.prototype.hasOwnProperty.call(parsed.data, "topRankLoopGiftId")) {
         settingPatch.topRankLoopGiftId = topRankLoopGiftId ?? null;

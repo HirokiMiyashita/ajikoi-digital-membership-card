@@ -9,27 +9,39 @@ datasource db {
 }
 
 model User {
-  userId         String    @id
-  displayName    String
-  role           UserRole?
-  points         Int       @default(0)
-  nextRank       String    @default("regular")
-  lastCheckInAt  DateTime?
-  officialAccountId String?
-  officialLinkedAt DateTime?
-  surveyId       String?   @unique
-  rank           Rank      @relation(fields: [nextRank], references: [id])
-  officialAccount OfficialAccount? @relation(fields: [officialAccountId], references: [id])
-  survey         UserSurvey? @relation(fields: [surveyId], references: [id])
-  checkIns       UserCheckIn[]
-  histories      UserHistory[]
-  userGifts      UserGift[]
+  userId                    String                          @id
+  displayName               String
+  role                      UserRole?
+  points                    Int                             @default(0)
+  nextRank                  String                          @default("regular")
+  lastCheckInAt             DateTime?
+  officialAccountId         String?
+  officialLinkedAt          DateTime?
+  surveyId                  String?                         @unique
+  googleReviewId            String?                         @unique
+  rank                      Rank                            @relation(fields: [nextRank], references: [id])
+  officialAccount           OfficialAccount?                @relation(fields: [officialAccountId], references: [id])
+  survey                    UserSurvey?                     @relation(fields: [surveyId], references: [id])
+  googleReview              GoogleReview?                   @relation(fields: [googleReviewId], references: [id], onDelete: SetNull)
+  checkIns                  UserCheckIn[]
+  histories                 UserHistory[]
+  userGifts                 UserGift[]
   storeOperationPermissions StaffStoreOperationPermission[]
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt                 DateTime                        @default(now())
+  updatedAt                 DateTime                        @updatedAt
 
   @@index([officialAccountId, createdAt])
   @@map("users")
+}
+
+model GoogleReview {
+  id         String   @id @default(cuid())
+  reviewText String   @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User?
+
+  @@map("google_reviews")
 }
 
 enum UserRole {
@@ -37,14 +49,14 @@ enum UserRole {
 }
 
 model UserSurvey {
-  id                 String   @id @default(cuid())
-  gender             String?
-  visitFrequency     String?
-  companionType      String?
-  birthDate          DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  users              User[]
+  id                      String                   @id @default(cuid())
+  gender                  String?
+  visitFrequency          String?
+  companionType           String?
+  birthDate               DateTime?
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  users                   User[]
   onboardingSurveyAnswers OnboardingSurveyAnswer[]
 
   @@map("user_surveys")
@@ -64,7 +76,7 @@ enum OnboardingSurveyPresetKey {
 }
 
 model OnboardingSurveyQuestionSetting {
-  id                String                     @id @default(cuid())
+  id                String                       @id @default(cuid())
   scopeKey          String
   officialAccountId String?
   questionKey       String
@@ -73,13 +85,13 @@ model OnboardingSurveyQuestionSetting {
   label             String
   options           Json?
   placeholder       String?
-  isEnabled         Boolean                    @default(true)
-  isRequired        Boolean                    @default(true)
+  isEnabled         Boolean                      @default(true)
+  isRequired        Boolean                      @default(true)
   sortOrder         Int
-  officialAccount   OfficialAccount?           @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
+  officialAccount   OfficialAccount?             @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
   answers           OnboardingSurveyAnswer[]
-  createdAt         DateTime                   @default(now())
-  updatedAt         DateTime                   @updatedAt
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
 
   @@unique([scopeKey, questionKey])
   @@index([scopeKey, presetKey])
@@ -112,35 +124,36 @@ enum GiftExpiryType {
 }
 
 model Gift {
-  id            String         @id @default(cuid())
-  title         String
-  usageGuide    String
-  expiryType    GiftExpiryType
-  expiryDays    Int?
-  expiryAt      DateTime?
-  imageUrl      String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  userGifts     UserGift[]
-  visitGachaSettings VisitGachaSetting[]
-  signupBenefitSettings MemberBenefitSetting[] @relation("SignupBenefitGift")
-  topRankLoopBenefitSettings MemberBenefitSetting[] @relation("TopRankLoopBenefitGift")
-  rankBenefitGiftSettings RankBenefitGiftSetting[]
+  id                         String                   @id @default(cuid())
+  title                      String
+  usageGuide                 String
+  expiryType                 GiftExpiryType
+  expiryDays                 Int?
+  expiryAt                   DateTime?
+  imageUrl                   String
+  createdAt                  DateTime                 @default(now())
+  updatedAt                  DateTime                 @updatedAt
+  userGifts                  UserGift[]
+  visitGachaSettings         VisitGachaSetting[]
+  signupBenefitSettings      MemberBenefitSetting[]   @relation("SignupBenefitGift")
+  reviewBenefitSettings      MemberBenefitSetting[]   @relation("ReviewBenefitGift")
+  topRankLoopBenefitSettings MemberBenefitSetting[]   @relation("TopRankLoopBenefitGift")
+  rankBenefitGiftSettings    RankBenefitGiftSetting[]
 
   @@map("gifts")
 }
 
 model VisitGachaSetting {
-  id                String           @id @default(cuid())
-  scopeKey          String           @unique
+  id                String                      @id @default(cuid())
+  scopeKey          String                      @unique
   officialAccountId String?
   giftId            String
   winProbability    Int
-  isActive          Boolean          @default(true)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  officialAccount   OfficialAccount? @relation(fields: [officialAccountId], references: [id])
-  gift              Gift             @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  isActive          Boolean                     @default(true)
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  officialAccount   OfficialAccount?            @relation(fields: [officialAccountId], references: [id])
+  gift              Gift                        @relation(fields: [giftId], references: [id], onDelete: Cascade)
   rankProbabilities VisitGachaRankProbability[]
 
   @@index([officialAccountId])
@@ -149,14 +162,14 @@ model VisitGachaSetting {
 }
 
 model VisitGachaRankProbability {
-  id         String           @id @default(cuid())
-  settingId  String
-  rankId     String
+  id             String            @id @default(cuid())
+  settingId      String
+  rankId         String
   winProbability Int
-  createdAt  DateTime         @default(now())
-  updatedAt  DateTime         @updatedAt
-  setting    VisitGachaSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
-  rank       Rank             @relation(fields: [rankId], references: [id], onDelete: Cascade)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  setting        VisitGachaSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
+  rank           Rank              @relation(fields: [rankId], references: [id], onDelete: Cascade)
 
   @@unique([settingId, rankId])
   @@index([rankId])
@@ -164,34 +177,34 @@ model VisitGachaRankProbability {
 }
 
 model GiftImageTemplate {
-  id         String   @id @default(cuid())
-  name       String
-  imageUrl   String
-  sortOrder  Int      @unique
-  isActive   Boolean  @default(true)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  imageUrl  String
+  sortOrder Int      @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("gift_image_templates")
 }
 
 model UserGift {
-  id                   String    @id @default(cuid())
-  userId               String
-  giftId               String
-  isUsed               Boolean   @default(false)
-  usedAt               DateTime?
-  issuedAt             DateTime  @default(now())
-  expiresAt            DateTime
-  transferredFromId    String?
-  transferredToUserId  String?
-  transferredAt        DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  user                 User      @relation(fields: [userId], references: [userId], onDelete: Cascade)
-  gift                 Gift      @relation(fields: [giftId], references: [id], onDelete: Cascade)
-  transferredFrom      UserGift? @relation("GiftTransfer", fields: [transferredFromId], references: [id], onDelete: SetNull)
-  transferredTo        UserGift[] @relation("GiftTransfer")
+  id                  String     @id @default(cuid())
+  userId              String
+  giftId              String
+  isUsed              Boolean    @default(false)
+  usedAt              DateTime?
+  issuedAt            DateTime   @default(now())
+  expiresAt           DateTime
+  transferredFromId   String?
+  transferredToUserId String?
+  transferredAt       DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  user                User       @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  gift                Gift       @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  transferredFrom     UserGift?  @relation("GiftTransfer", fields: [transferredFromId], references: [id], onDelete: SetNull)
+  transferredTo       UserGift[] @relation("GiftTransfer")
 
   @@index([userId, isUsed])
   @@index([userId, isUsed, expiresAt, issuedAt(sort: Desc), createdAt(sort: Desc)])
@@ -201,44 +214,44 @@ model UserGift {
 }
 
 model Rank {
-  id        String @id
-  name      String
-  minPoints Int
-  maxPoints Int
-  users     User[]
+  id                          String                      @id
+  name                        String
+  minPoints                   Int
+  maxPoints                   Int
+  users                       User[]
   visitGachaRankProbabilities VisitGachaRankProbability[]
-  rankBenefitGiftSettings RankBenefitGiftSetting[]
+  rankBenefitGiftSettings     RankBenefitGiftSetting[]
 
   @@map("ranks")
 }
 
 model AdminUser {
-  id           String   @id
-  passwordHash String
+  id                String           @id
+  passwordHash      String
   officialAccountId String?
-  officialAccount OfficialAccount? @relation(fields: [officialAccountId], references: [id])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  officialAccount   OfficialAccount? @relation(fields: [officialAccountId], references: [id])
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@map("admin_user")
 }
 
 model OfficialAccount {
-  id            String      @id @default(cuid())
-  lineBasicId   String      @unique
-  name          String?
-  users         User[]
-  adminUsers    AdminUser[]
+  id                               String                            @id @default(cuid())
+  lineBasicId                      String                            @unique
+  name                             String?
+  users                            User[]
+  adminUsers                       AdminUser[]
   onboardingSurveyQuestionSettings OnboardingSurveyQuestionSetting[]
-  userHistories UserHistory[]
-  checkIns      UserCheckIn[]
-  visitGachaSettings VisitGachaSetting[]
-  lineDeliveryTriggerSettings LineDeliveryTriggerSetting[]
-  staffOperationPermissions StaffStoreOperationPermission[]
-  memberBenefitSettings MemberBenefitSetting[]
-  storeStatus   StoreStatus?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  userHistories                    UserHistory[]
+  checkIns                         UserCheckIn[]
+  visitGachaSettings               VisitGachaSetting[]
+  lineDeliveryTriggerSettings      LineDeliveryTriggerSetting[]
+  staffOperationPermissions        StaffStoreOperationPermission[]
+  memberBenefitSettings            MemberBenefitSetting[]
+  storeStatus                      StoreStatus?
+  createdAt                        DateTime                          @default(now())
+  updatedAt                        DateTime                          @updatedAt
 
   @@map("official_accounts")
 }
@@ -268,34 +281,37 @@ model LineDeliveryTriggerSetting {
 }
 
 model MemberBenefitSetting {
-  id                 String            @id @default(cuid())
-  scopeKey           String            @unique
-  officialAccountId  String?
-  signupGiftId       String?
-  topRankLoopGiftId  String?
-  officialAccount    OfficialAccount?  @relation(fields: [officialAccountId], references: [id])
-  signupGift         Gift?             @relation("SignupBenefitGift", fields: [signupGiftId], references: [id], onDelete: SetNull)
-  topRankLoopGift    Gift?             @relation("TopRankLoopBenefitGift", fields: [topRankLoopGiftId], references: [id], onDelete: SetNull)
+  id                      String                   @id @default(cuid())
+  scopeKey                String                   @unique
+  officialAccountId       String?
+  signupGiftId            String?
+  reviewGiftId            String?
+  topRankLoopGiftId       String?
+  officialAccount         OfficialAccount?         @relation(fields: [officialAccountId], references: [id])
+  signupGift              Gift?                    @relation("SignupBenefitGift", fields: [signupGiftId], references: [id], onDelete: SetNull)
+  reviewGift              Gift?                    @relation("ReviewBenefitGift", fields: [reviewGiftId], references: [id], onDelete: SetNull)
+  topRankLoopGift         Gift?                    @relation("TopRankLoopBenefitGift", fields: [topRankLoopGiftId], references: [id], onDelete: SetNull)
   rankBenefitGiftSettings RankBenefitGiftSetting[]
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
 
   @@index([officialAccountId])
   @@index([signupGiftId])
+  @@index([reviewGiftId])
   @@index([topRankLoopGiftId])
   @@map("member_benefit_settings")
 }
 
 model RankBenefitGiftSetting {
-  id         String              @id @default(cuid())
-  settingId  String
-  rankId     String
-  giftId     String
-  setting    MemberBenefitSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
-  rank       Rank                @relation(fields: [rankId], references: [id], onDelete: Cascade)
-  gift       Gift                @relation(fields: [giftId], references: [id], onDelete: Cascade)
-  createdAt  DateTime            @default(now())
-  updatedAt  DateTime            @updatedAt
+  id        String               @id @default(cuid())
+  settingId String
+  rankId    String
+  giftId    String
+  setting   MemberBenefitSetting @relation(fields: [settingId], references: [id], onDelete: Cascade)
+  rank      Rank                 @relation(fields: [rankId], references: [id], onDelete: Cascade)
+  gift      Gift                 @relation(fields: [giftId], references: [id], onDelete: Cascade)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
 
   @@unique([settingId, rankId])
   @@index([rankId])
@@ -304,15 +320,15 @@ model RankBenefitGiftSetting {
 }
 
 model StaffStoreOperationPermission {
-  id                String         @id @default(cuid())
+  id                String          @id @default(cuid())
   userId            String
   officialAccountId String
-  canOpen           Boolean        @default(false)
-  canClose          Boolean        @default(false)
-  user              User           @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  canOpen           Boolean         @default(false)
+  canClose          Boolean         @default(false)
+  user              User            @relation(fields: [userId], references: [userId], onDelete: Cascade)
   officialAccount   OfficialAccount @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
   @@unique([userId, officialAccountId])
   @@index([officialAccountId])
@@ -368,17 +384,17 @@ model UserHistory {
 }
 
 model AdminAuthUser {
-  id            String             @id
-  name          String
-  email         String
-  emailVerified Boolean
-  image         String?
-  username      String?            @unique
+  id              String             @id
+  name            String
+  email           String
+  emailVerified   Boolean
+  image           String?
+  username        String?            @unique
   displayUsername String?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  sessions      AdminAuthSession[]
-  accounts      AdminAuthAccount[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  sessions        AdminAuthSession[]
+  accounts        AdminAuthAccount[]
 
   @@unique([email])
   @@map("admin_auth_user")
@@ -420,7 +436,7 @@ model AdminAuthAccount {
 }
 
 model AdminAuthVerification {
-  id         String   @id
+  id         String    @id
   identifier String
   value      String
   expiresAt  DateTime

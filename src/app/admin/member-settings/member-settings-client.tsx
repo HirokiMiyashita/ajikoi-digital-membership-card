@@ -18,12 +18,14 @@ type Props = {
   gifts: GiftOption[];
   ranks: RankOption[];
   initialSignupGiftId: string | null;
+  initialReviewGiftId: string | null;
   initialTopRankLoopGiftId: string | null;
   initialRankGiftMap: Record<string, string>;
 };
 
 type SavePayload = {
   signupGiftId?: string | null;
+  reviewGiftId?: string | null;
   topRankLoopGiftId?: string | null;
   rankGiftSettings?: Array<{ rankId: string; giftId: string | null }>;
 };
@@ -56,13 +58,16 @@ export default function MemberSettingsClient({
   gifts,
   ranks,
   initialSignupGiftId,
+  initialReviewGiftId,
   initialTopRankLoopGiftId,
   initialRankGiftMap,
 }: Props) {
   const [signupGiftId, setSignupGiftId] = useState<string | null>(initialSignupGiftId);
+  const [reviewGiftId, setReviewGiftId] = useState<string | null>(initialReviewGiftId);
   const [topRankLoopGiftId, setTopRankLoopGiftId] = useState<string | null>(initialTopRankLoopGiftId);
   const [rankGiftMap, setRankGiftMap] = useState<Record<string, string>>(initialRankGiftMap);
   const [editingSignup, setEditingSignup] = useState(false);
+  const [editingReview, setEditingReview] = useState(false);
   const [editingTopRankLoop, setEditingTopRankLoop] = useState(false);
   const [editingRanks, setEditingRanks] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -94,6 +99,7 @@ export default function MemberSettingsClient({
       }
       showToast("会員設定を保存しました。");
       setEditingSignup(false);
+      setEditingReview(false);
       setEditingTopRankLoop(false);
       setEditingRanks(false);
     } catch (error) {
@@ -144,6 +150,48 @@ export default function MemberSettingsClient({
             </>
           ) : (
             <GiftPreview giftId={signupGiftId} gifts={gifts} emptyLabel="無効" />
+          )}
+        </div>
+      </section>
+
+      <section className="mx-auto w-[90%] rounded-xl border border-[#dbe2ea] bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-[#e2e8f0] px-4 py-3">
+          <h2 className="font-semibold text-[#0f172a]">口コミ投稿の特典</h2>
+          <button
+            type="button"
+            onClick={() => setEditingReview((prev) => !prev)}
+            className="rounded border border-[#cbd5e1] bg-white px-3 py-1 text-sm font-semibold text-[#334155]"
+          >
+            編集
+          </button>
+        </div>
+        <div className="space-y-3 px-4 py-3">
+          <p className="text-sm text-[#334155]">Google口コミ投稿後に付与するギフト</p>
+          {editingReview ? (
+            <>
+              <select
+                value={reviewGiftId ?? ""}
+                onChange={(event) => setReviewGiftId(event.target.value || null)}
+                className="w-full rounded border border-[#cbd5e1] px-3 py-2 text-sm"
+              >
+                <option value="">未設定</option>
+                {gifts.map((gift) => (
+                  <option key={gift.id} value={gift.id}>
+                    {gift.title}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => void saveSettings({ reviewGiftId })}
+                className="rounded bg-[#0f766e] px-4 py-2 text-sm font-bold text-white disabled:bg-[#94a3b8]"
+              >
+                保存
+              </button>
+            </>
+          ) : (
+            <GiftPreview giftId={reviewGiftId} gifts={gifts} emptyLabel="無効" />
           )}
         </div>
       </section>
