@@ -665,13 +665,10 @@ export default function Home() {
             口コミキャンペーン
           </div>
           <div className="px-5 py-4">
-            <p className="text-center text-lg font-bold text-[#0f172a]">
+            <p className="text-center text-1xl font-bold leading-tight text-[#0f172a]">
               口コミを書いたら
               <br />
-              <span className="text-[#0f766e]">ギフトをプレゼント！</span>
-            </p>
-            <p className="mt-2 text-center text-sm leading-6 text-[#64748b]">
-              Google口コミの投稿完了後、スタッフまでお声がけください。
+              <span className="text-[#0f766e]">特典をプレゼント！</span>
             </p>
             {googleReviewUrl ? (
               <a
