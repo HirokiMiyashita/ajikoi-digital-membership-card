@@ -212,11 +212,14 @@ export default function Home() {
 
         // 起動時はまず users テーブル同期まで戻す（段階的に機能を戻す）
         setProfile(userProfile);
-        const syncResult = await rpcClient.user.upsertFromLiff({
+        const syncResult = await rpcClient.user.getFromLiff({
           userId: userProfile.userId,
-          displayName: userProfile.displayName,
         });
         const syncedAt = performance.now();
+        // const syncResult = await rpcClient.user.upsertFromLiff({
+        //   userId: userProfile.userId,
+        //   displayName: userProfile.displayName,
+        // });
         setPoints(syncResult.points);
         setUserRole(syncResult.role);
         setCurrentRankName(syncResult.currentRankName);
@@ -265,7 +268,7 @@ export default function Home() {
           importLiff: Math.round(importedAt - importStartedAt),
           liffInit: Math.round(initializedAt - importedAt),
           getProfile: Math.round(profileFetchedAt - initializedAt),
-          upsertFromLiff: Math.round(syncedAt - profileFetchedAt),
+          getFromLiff: Math.round(syncedAt - profileFetchedAt),
           totalToReady: Math.round(syncedAt - importStartedAt),
         });
       } catch (error) {
