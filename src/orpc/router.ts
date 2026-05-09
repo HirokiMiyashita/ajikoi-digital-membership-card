@@ -22,6 +22,7 @@ const prismaUnsafe = prisma as unknown as {
 const OFFICIAL_ACCOUNT_CACHE_TTL_MS = 5 * 60 * 1000;
 let officialAccountCache: { id: string | null; expiresAt: number } | null = null;
 const RANK_CACHE_TTL_MS = 5 * 60 * 1000;
+const SIGNUP_INITIAL_POINTS = 1;
 type GiftExpiryTypeValue = "DAYS_AFTER_ISSUE" | "FIXED_DATE";
 type LineDeliveryTriggerTypeValue = "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP";
 type UserRoleValue = "staff";
@@ -1256,6 +1257,7 @@ export const appRouter = {
             INSERT INTO "users" (
               "userId",
               "displayName",
+              "points",
               "officialAccountId",
               "officialLinkedAt",
               "createdAt",
@@ -1264,6 +1266,7 @@ export const appRouter = {
             VALUES (
               ${input.userId},
               ${input.displayName},
+              ${SIGNUP_INITIAL_POINTS},
               ${officialAccountId},
               ${officialAccountId ? new Date() : null},
               NOW(),
