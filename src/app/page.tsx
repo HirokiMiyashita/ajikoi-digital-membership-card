@@ -169,16 +169,16 @@ export default function Home() {
     pendingSurveyRef.current = pendingSurvey;
   }, [pendingSurvey]);
 
-  // const fetchOwnedGifts = async (userId: string) => {
-  //   try {
-  //     const result = await rpcClient.user.listOwnedGifts({
-  //       userId,
-  //     });
-  //     setOwnedGifts(result.gifts);
-  //   } catch {
-  //     // ignore fetch error to keep top flow alive
-  //   }
-  // };
+  const fetchOwnedGifts = async (userId: string) => {
+    try {
+      const result = await rpcClient.user.listOwnedGifts({
+        userId,
+      });
+      setOwnedGifts(result.gifts);
+    } catch {
+      // ignore fetch error to keep top flow alive
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -263,7 +263,7 @@ export default function Home() {
           setToastMessage(`会員登録特典「${syncResult.signupGiftTitle}」を獲得しました。`);
           setTimeout(() => setToastMessage(null), 2600);
         }
-        // void fetchOwnedGifts(userProfile.userId);
+        void fetchOwnedGifts(userProfile.userId);
         setIsProfileLoading(false);
         console.info("[liff-init-ms]", {
           importLiff: Math.round(importedAt - importStartedAt),
@@ -359,39 +359,39 @@ export default function Home() {
   //   void runAutoCheckin();
   // }, [checkedInToday, isStaffPortal, pendingSurvey, profile, userRole]);
 
-  // useEffect(() => {
-  //   const claimGiftFromQuery = async () => {
-  //     if (!profile) return;
-  //     if (typeof window === "undefined") return;
-  //     const giftId = new URLSearchParams(window.location.search).get("giftId");
-  //     if (!giftId) return;
-  //     if (claimedGiftQueryRef.current === giftId) return;
-  //     claimedGiftQueryRef.current = giftId;
-  //
-  //     setScanMessage("giftを獲得中...");
-  //     try {
-  //       const result = await rpcClient.user.claimGiftFromLink({
-  //         userId: profile.userId,
-  //         giftId,
-  //       });
-  //       if (result.alreadyClaimed) {
-  //         setToastMessage(`「${result.giftTitle}」は既に獲得済みです。`);
-  //         setScanMessage("このギフトは既に獲得済みです。");
-  //       } else {
-  //         setToastMessage(`「${result.giftTitle}」を獲得しました。`);
-  //         setScanMessage("ギフトを獲得しました。");
-  //       }
-  //       setTimeout(() => setToastMessage(null), 2200);
-  //       await fetchOwnedGifts(profile.userId);
-  //       const url = new URL(window.location.href);
-  //       url.searchParams.delete("giftId");
-  //       window.history.replaceState({}, "", url.toString());
-  //     } catch (error) {
-  //       setScanMessage(error instanceof Error ? error.message : "ギフトの獲得に失敗しました。");
-  //     }
-  //   };
-  //   void claimGiftFromQuery();
-  // }, [profile]);
+  useEffect(() => {
+    const claimGiftFromQuery = async () => {
+      if (!profile) return;
+      if (typeof window === "undefined") return;
+      const giftId = new URLSearchParams(window.location.search).get("giftId");
+      if (!giftId) return;
+      if (claimedGiftQueryRef.current === giftId) return;
+      claimedGiftQueryRef.current = giftId;
+
+      setScanMessage("giftを獲得中...");
+      try {
+        const result = await rpcClient.user.claimGiftFromLink({
+          userId: profile.userId,
+          giftId,
+        });
+        if (result.alreadyClaimed) {
+          setToastMessage(`「${result.giftTitle}」は既に獲得済みです。`);
+          setScanMessage("このギフトは既に獲得済みです。");
+        } else {
+          setToastMessage(`「${result.giftTitle}」を獲得しました。`);
+          setScanMessage("ギフトを獲得しました。");
+        }
+        setTimeout(() => setToastMessage(null), 2200);
+        await fetchOwnedGifts(profile.userId);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("giftId");
+        window.history.replaceState({}, "", url.toString());
+      } catch (error) {
+        setScanMessage(error instanceof Error ? error.message : "ギフトの獲得に失敗しました。");
+      }
+    };
+    void claimGiftFromQuery();
+  }, [profile]);
 
   const progressToNextRank =
     nextRankName === null ? 100 : Math.min(((points + pointsToNextRank) === 0 ? 0 : (points / (points + pointsToNextRank)) * 100), 100);
@@ -468,7 +468,7 @@ export default function Home() {
       setArmedUseGiftId(null);
       setToastMessage("特典が使用されました。");
       setTimeout(() => setToastMessage(null), 2200);
-      // await fetchOwnedGifts(profile.userId);
+      await fetchOwnedGifts(profile.userId);
     } catch (error) {
       setToastMessage(error instanceof Error ? error.message : "特典の利用に失敗しました。");
       setTimeout(() => setToastMessage(null), 2200);
