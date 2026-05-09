@@ -517,6 +517,28 @@ type VisitGachaResult = {
     expiresLabel: string | null;
   } | null;
 };
+type VisitGachaPreview = {
+  eligible: boolean;
+  winProbability: number;
+  previewGift: {
+    title: string;
+    usageGuide: string;
+    imageUrl: string;
+    expiresLabel: string | null;
+  } | null;
+};
+type VisitGachaContext = {
+  winProbability: number;
+  gift: {
+    id: string;
+    title: string;
+    usageGuide: string;
+    imageUrl: string;
+    expiryType: GiftExpiryTypeValue;
+    expiryDays: number | null;
+    expiryAt: Date | null;
+  };
+};
 
 function formatGiftExpiryLabel(gift: {
   expiryType: GiftExpiryTypeValue;
@@ -540,12 +562,27 @@ function formatGiftExpiryLabel(gift: {
   return `${y}/${m}/${d} まで有効`;
 }
 
-async function runVisitGacha(userId: string, officialAccountId: string | null): Promise<VisitGachaResult> {
+function toVisitGachaPreviewGift(gift: {
+  title: string;
+  usageGuide: string;
+  imageUrl: string;
+  expiryType: GiftExpiryTypeValue;
+  expiryDays: number | null;
+  expiryAt: Date | null;
+}) {
+  return {
+    title: gift.title,
+    usageGuide: gift.usageGuide,
+    imageUrl: gift.imageUrl,
+    expiresLabel: formatGiftExpiryLabel(gift),
+  };
+}
+
+async function resolveVisitGachaContext(userId: string, officialAccountId: string | null): Promise<VisitGachaContext | null> {
   const scopeKey = officialAccountId ?? "global";
   const setting = await prisma.visitGachaSetting.findUnique({
     where: { scopeKey },
     select: {
-      giftId: true,
       winProbability: true,
       isActive: true,
       rankProbabilities: {
@@ -567,15 +604,8 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
       },
     },
   });
-
-  if (!setting || !setting.isActive) {
-    return {
-      executed: false,
-      won: false,
-      winProbability: 0,
-      giftTitle: null,
-      previewGift: null,
-    };
+  if (!setting || !setting.isActive || !setting.gift) {
+    return null;
   }
 
   const user = await prisma.user.findUnique({
@@ -588,15 +618,42 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
     ? setting.rankProbabilities.find((row) => row.rankId === user.nextRank)
     : null;
   const winProbability = Math.max(0, Math.min(100, rankProbability?.winProbability ?? setting.winProbability));
+  return {
+    winProbability,
+    gift: setting.gift,
+  };
+}
+
+async function getVisitGachaPreview(userId: string, officialAccountId: string | null): Promise<VisitGachaPreview> {
+  const context = await resolveVisitGachaContext(userId, officialAccountId);
+  if (!context) {
+    return {
+      eligible: false,
+      winProbability: 0,
+      previewGift: null,
+    };
+  }
+  return {
+    eligible: true,
+    winProbability: context.winProbability,
+    previewGift: toVisitGachaPreviewGift(context.gift),
+  };
+}
+
+async function runVisitGacha(userId: string, officialAccountId: string | null): Promise<VisitGachaResult> {
+  const context = await resolveVisitGachaContext(userId, officialAccountId);
+  if (!context) {
+    return {
+      executed: false,
+      won: false,
+      winProbability: 0,
+      giftTitle: null,
+      previewGift: null,
+    };
+  }
+  const winProbability = context.winProbability;
   const won = Math.random() * 100 < winProbability;
-  const previewGift = setting.gift
-    ? {
-        title: setting.gift.title,
-        usageGuide: setting.gift.usageGuide,
-        imageUrl: setting.gift.imageUrl,
-        expiresLabel: formatGiftExpiryLabel(setting.gift),
-      }
-    : null;
+  const previewGift = toVisitGachaPreviewGift(context.gift);
 
   if (!won) {
     return {
@@ -608,27 +665,8 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
     };
   }
 
-  const gift = setting.gift;
-  if (!gift) {
-    return {
-      executed: true,
-      won: false,
-      winProbability,
-      giftTitle: null,
-      previewGift,
-    };
-  }
-
-  const now = new Date();
-  let expiresAt: Date | null = null;
-  if (gift.expiryType === "DAYS_AFTER_ISSUE") {
-    const days = gift.expiryDays ?? 0;
-    if (days > 0) {
-      expiresAt = addDays(now, days);
-    }
-  } else if (gift.expiryAt) {
-    expiresAt = gift.expiryAt;
-  }
+  const gift = context.gift;
+  const expiresAt = resolveGiftExpiryAt(gift);
 
   if (!expiresAt) {
     return {
@@ -1989,6 +2027,104 @@ export const appRouter = {
           giftTitle: grantedTitle,
         };
       }),
+    challengeVisitGacha: os
+      .input(
+        z.object({
+          userId: z.string().min(1),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const user = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: {
+            userId: true,
+            officialAccountId: true,
+            lastCheckInAt: true,
+          },
+        });
+        if (!user) {
+          throw new Error("ユーザーが見つかりません。");
+        }
+        if (!isCheckedInToday(user.lastCheckInAt)) {
+          throw new Error("本日の来店チェックイン後にガチャへ参加してください。");
+        }
+
+        const gachaLogRows = await prisma.$queryRaw<Array<{ count: number }>>`
+          SELECT COUNT(*)::int AS "count"
+          FROM "user_history"
+          WHERE "targetUserId" = ${user.userId}
+            AND "action" IN ('visit_gacha_won', 'visit_gacha_lost')
+            AND "createdAt" >= ${getStartOfTodayInJstUtc()}
+        `;
+        if ((gachaLogRows[0]?.count ?? 0) > 0) {
+          return {
+            ok: true,
+            executed: false,
+            alreadyChallengedToday: true,
+            won: false,
+            winProbability: 0,
+            giftTitle: null as string | null,
+          };
+        }
+
+        const checkInCountRows = await prisma.$queryRaw<Array<{ count: number }>>`
+          SELECT COUNT(*)::int AS "count"
+          FROM "user_checkins"
+          WHERE "userId" = ${user.userId}
+        `;
+        const isFirstVisit = (checkInCountRows[0]?.count ?? 0) <= 1;
+        if (isFirstVisit) {
+          return {
+            ok: true,
+            executed: false,
+            alreadyChallengedToday: false,
+            won: false,
+            winProbability: 0,
+            giftTitle: null as string | null,
+          };
+        }
+
+        const officialAccountId = user.officialAccountId ?? (await resolveOfficialAccountId());
+        const gacha = await runVisitGacha(user.userId, officialAccountId);
+        if (!gacha.executed) {
+          return {
+            ok: true,
+            executed: false,
+            alreadyChallengedToday: false,
+            won: false,
+            winProbability: gacha.winProbability,
+            giftTitle: null as string | null,
+          };
+        }
+
+        await prisma.$executeRaw`
+          INSERT INTO "user_history"
+            ("id", "targetUserId", "actorType", "actorId", "action", "metadata", "officialAccountId", "createdAt")
+          VALUES
+            (
+              md5(random()::text || clock_timestamp()::text),
+              ${user.userId},
+              'system',
+              'visit_gacha',
+              ${gacha.won ? "visit_gacha_won" : "visit_gacha_lost"},
+              ${JSON.stringify({
+                winProbability: gacha.winProbability,
+                giftTitle: gacha.giftTitle,
+              })}::jsonb,
+              ${officialAccountId},
+              NOW()
+            )
+        `;
+
+        return {
+          ok: true,
+          executed: true,
+          alreadyChallengedToday: false,
+          won: gacha.won,
+          winProbability: gacha.winProbability,
+          giftTitle: gacha.giftTitle,
+        };
+      }),
     addVisitPoint: os
       .input(
         z.object({
@@ -2144,33 +2280,11 @@ export const appRouter = {
 
         const gacha = isFirstVisit
           ? {
-              executed: false,
-              won: false,
+              eligible: false,
               winProbability: 0,
-              giftTitle: null,
               previewGift: null,
             }
-          : await runVisitGacha(updatedUser.userId, officialAccountId);
-        if (gacha.executed) {
-          await prisma.$executeRaw`
-            INSERT INTO "user_history"
-              ("id", "targetUserId", "actorType", "actorId", "action", "metadata", "officialAccountId", "createdAt")
-            VALUES
-              (
-                md5(random()::text || clock_timestamp()::text),
-                ${updatedUser.userId},
-                'system',
-                'visit_gacha',
-                ${gacha.won ? "visit_gacha_won" : "visit_gacha_lost"},
-                ${JSON.stringify({
-                  winProbability: gacha.winProbability,
-                  giftTitle: gacha.giftTitle,
-                })}::jsonb,
-                ${officialAccountId},
-                NOW()
-              )
-          `;
-        }
+          : await getVisitGachaPreview(updatedUser.userId, officialAccountId);
 
         await sendLineDeliveryTriggers({
           triggerType: "CHECKIN_POINT_GRANTED",

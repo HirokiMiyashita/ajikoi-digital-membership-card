@@ -151,6 +151,7 @@ export default function Home() {
   const [nextRankName, setNextRankName] = useState<string | null>("シルバー");
   const [pointsToNextRank, setPointsToNextRank] = useState(0);
   const [isGachaJudging, setIsGachaJudging] = useState(false);
+  const [gachaJudgingLabel, setGachaJudgingLabel] = useState("ポイント付与中...");
   const [checkedInToday, setCheckedInToday] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [ownedGifts, setOwnedGifts] = useState<OwnedGift[]>([]);
@@ -351,6 +352,7 @@ export default function Home() {
       setGachaStartPopup({ open: false, winProbability: 0, previewGift: null });
       setGachaPopup({ open: false, won: false, giftTitle: null });
       try {
+        setGachaJudgingLabel("ポイント付与中...");
         setIsGachaJudging(true);
         const result = await rpcClient.user.addVisitPoint({
           userId: profile.userId,
@@ -365,16 +367,11 @@ export default function Home() {
           result.grantedGiftTitles.length > 0
             ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
             : "";
-        if (result.gacha?.executed) {
+        if (result.gacha?.eligible) {
           setGachaStartPopup({
             open: true,
             winProbability: result.gacha.winProbability,
             previewGift: result.gacha.previewGift ?? null,
-          });
-          setGachaPopup({
-            open: false,
-            won: result.gacha.won,
-            giftTitle: result.gacha.giftTitle ?? null,
           });
           setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャにチャレンジしてください。`);
         } else {
@@ -487,9 +484,37 @@ export default function Home() {
     setGachaPopup((prev) => ({ ...prev, open: false }));
   };
 
-  const handleStartGachaChallenge = () => {
-    setGachaStartPopup({ open: false, winProbability: 0, previewGift: null });
-    setGachaPopup((prev) => ({ ...prev, open: true }));
+  const handleStartGachaChallenge = async () => {
+    if (!profile) return;
+    setGachaStartPopup((prev) => ({ ...prev, open: false }));
+    setGachaJudgingLabel("判定中...");
+    setIsGachaJudging(true);
+    try {
+      const result = await rpcClient.user.challengeVisitGacha({
+        userId: profile.userId,
+      });
+      if (result.alreadyChallengedToday) {
+        setScanMessage("本日のガチャは実施済みです。");
+        return;
+      }
+      if (!result.executed) {
+        setScanMessage("本日はガチャを実行できません。");
+        return;
+      }
+      setGachaPopup({
+        open: true,
+        won: result.won,
+        giftTitle: result.giftTitle ?? null,
+      });
+      if (result.giftTitle) {
+        await fetchOwnedGifts(profile.userId);
+      }
+    } catch (error) {
+      setScanMessage(error instanceof Error ? error.message : "ガチャの実行に失敗しました。");
+    } finally {
+      setIsGachaJudging(false);
+      setGachaJudgingLabel("ポイント付与中...");
+    }
   };
 
   const handleSubmitReviewPassword = async () => {
@@ -826,7 +851,7 @@ export default function Home() {
             className="h-10 w-10 animate-spin rounded-full border-4 border-[#0f766e]/25 border-t-[#0f766e]"
             aria-hidden="true"
           />
-          <p className="text-sm font-semibold text-[#0f172a]">ポイント付与中...</p>
+          <p className="text-sm font-semibold text-[#0f172a]">{gachaJudgingLabel}</p>
         </div>
       ) : null}
       {gachaPopup.open ? (
