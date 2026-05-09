@@ -103,6 +103,7 @@ const defaultSurveyQuestions: SurveyQuestionConfig[] = [
     sortOrder: 3,
   },
 ];
+const GOOGLE_REVIEW_URL = "https://www.google.com/maps/place/%E3%81%82%E3%81%AE%E5%91%B3%E3%81%8C%E6%81%8B%E3%81%97%E3%81%84%E3%80%82+%E3%81%8A%E3%81%B0%E3%82%93%E3%81%96%E3%81%84%E5%B1%85%E9%85%92%E5%B1%8B/@34.6795006,135.587742,17z/data=!4m8!3m7!1s0x6000df006ad5dbbf:0xa70695d1a3ce360b!8m2!3d34.6795006!4d135.587742!9m1!1b1!16s%2Fg%2F11w1rd8j5l?entry=ttu&g_ep=EgoyMDI2MDUwNi4wIKXMDSoASAFQAw%3D%3D";
 
 function todayAsYmd() {
   const date = new Date();
@@ -162,9 +163,7 @@ export default function Home() {
   const [surveyForm, setSurveyForm] = useState<Record<string, string>>({});
   const [hasGoogleReview, setHasGoogleReview] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
-  const [reviewText, setReviewText] = useState("");
-  const [reviewRating, setReviewRating] = useState(0);
-  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+  const [hasOpenedGoogleReview, setHasOpenedGoogleReview] = useState(false);
   const claimedGiftQueryRef = useRef<string | null>(null);
   const autoCheckinTokenRef = useRef<string | null>(null);
   const pendingSurveyRef = useRef(false);
@@ -464,28 +463,9 @@ export default function Home() {
     setGachaPopup((prev) => ({ ...prev, open: false }));
   };
 
-  const handleReviewSubmit = async () => {
-    if (reviewRating < 1) {
-      setToastMessage("星評価を選択してください。");
-      setTimeout(() => setToastMessage(null), 2200);
-      return;
-    }
-    if (reviewText.trim().length === 0) {
-      setToastMessage("口コミ内容を入力してください。");
-      setTimeout(() => setToastMessage(null), 2200);
-      return;
-    }
-    setIsSubmittingReview(true);
-    try {
-      // TODO: 口コミ投稿・特典自動付与API実装時に差し替える
-      setToastMessage("口コミを受け付けました。");
-      setTimeout(() => setToastMessage(null), 2200);
-      setIsReviewModalOpen(false);
-      setReviewText("");
-      setReviewRating(0);
-    } finally {
-      setIsSubmittingReview(false);
-    }
+  const handleReviewReadyForStaff = () => {
+    setToastMessage("この画面をスタッフにお見せください。");
+    setTimeout(() => setToastMessage(null), 2200);
   };
 
   const handleUseGiftClick = async (gift: OwnedGift) => {
@@ -699,7 +679,10 @@ export default function Home() {
             </p>
             <button
               type="button"
-              onClick={() => setIsReviewModalOpen(true)}
+              onClick={() => {
+                setHasOpenedGoogleReview(false);
+                setIsReviewModalOpen(true);
+              }}
               className="mt-4 flex w-full items-center justify-center rounded-lg bg-[#14b8a6] px-4 py-3 text-sm font-bold text-white"
             >
               口コミを書く
@@ -860,39 +843,42 @@ export default function Home() {
       {isReviewModalOpen ? (
         <div className="fixed inset-0 z-59 flex items-center justify-center bg-black/35 px-6">
           <section className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
-            <h3 className="text-center text-lg font-bold text-[#0f172a]">口コミを投稿</h3>
-            <textarea
-              value={reviewText}
-              onChange={(event) => setReviewText(event.target.value)}
-              placeholder="口コミ内容を入力してください"
-              className="mt-4 min-h-28 w-full resize-y rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm text-[#0f172a] outline-none focus:border-[#14b8a6]"
-            />
-            <div className="mt-4 flex items-center justify-center gap-1">
-              {[1, 2, 3, 4, 5].map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setReviewRating(value)}
-                  className={`text-3xl leading-none ${reviewRating >= value ? "text-[#f59e0b]" : "text-[#cbd5e1]"}`}
-                  aria-label={`${value}星`}
-                >
-                  ★
-                </button>
-              ))}
-            </div>
+            <h3 className="text-center text-lg font-bold text-[#0f172a]">口コミ投稿のご案内</h3>
+            <p className="mt-3 text-center text-sm leading-6 text-[#475569]">
+              1. Googleで口コミを投稿
+              <br />
+              2. 投稿後にこの画面をスタッフへ提示
+            </p>
+            <a
+              href={GOOGLE_REVIEW_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => setHasOpenedGoogleReview(true)}
+              className="mt-4 flex w-full items-center justify-center rounded-lg bg-[#14b8a6] py-3 text-sm font-bold text-white"
+            >
+              Googleで口コミを書く
+            </a>
             <button
               type="button"
-              onClick={() => void handleReviewSubmit()}
-              disabled={isSubmittingReview}
-              className="mt-5 w-full rounded-lg bg-[#0f766e] py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
+              onClick={handleReviewReadyForStaff}
+              disabled={!hasOpenedGoogleReview}
+              className="mt-3 w-full rounded-lg bg-[#0f766e] py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
             >
-              {isSubmittingReview ? "送信中..." : "送信"}
+              投稿後、スタッフに見せる
             </button>
+            {!hasOpenedGoogleReview ? (
+              <p className="mt-2 text-center text-xs text-[#64748b]">
+                先に「Googleで口コミを書く」を押してください
+              </p>
+            ) : (
+              <p className="mt-2 text-center text-xs font-semibold text-[#0f766e]">
+                口コミ投稿後にこのボタンを押してください
+              </p>
+            )}
             <button
               type="button"
               onClick={() => setIsReviewModalOpen(false)}
-              disabled={isSubmittingReview}
-              className="mt-3 w-full rounded-lg border border-[#cbd5e1] py-2 text-sm font-semibold text-[#334155] disabled:opacity-50"
+              className="mt-3 w-full rounded-lg border border-[#cbd5e1] py-2 text-sm font-semibold text-[#334155]"
             >
               閉じる
             </button>
