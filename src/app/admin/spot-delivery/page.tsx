@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 import { requireAdminUser } from "@/lib/admin-guard";
 import { prisma } from "@/lib/prisma";
 
@@ -11,9 +13,29 @@ type DeliveryHistoryRow = {
   failed: number;
 };
 
+const MONTHLY_LINE_DELIVERY_LIMIT = 200;
+
+function getStartOfCurrentMonthInJstUtc() {
+  const jstOffsetMs = 9 * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const jstNow = new Date(nowMs + jstOffsetMs);
+  const startOfMonthInJstMs =
+    Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth(), 1) - jstOffsetMs;
+  return new Date(startOfMonthInJstMs);
+}
+
+function getStartOfNextMonthInJstUtc() {
+  const jstOffsetMs = 9 * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const jstNow = new Date(nowMs + jstOffsetMs);
+  const startOfNextMonthInJstMs =
+    Date.UTC(jstNow.getUTCFullYear(), jstNow.getUTCMonth() + 1, 1) - jstOffsetMs;
+  return new Date(startOfNextMonthInJstMs);
+}
+
 export default async function AdminSpotDeliveryPage() {
   const adminUser = await requireAdminUser();
-  const [histories, triggerSettings] = await Promise.all([
+  const [histories, triggerSettings, monthlyUsageRows] = await Promise.all([
     prisma.userHistory.findMany({
       where: {
         action: "line_trigger_delivery_executed",
@@ -45,7 +67,23 @@ export default async function AdminSpotDeliveryPage() {
       },
       take: 100,
     }),
+    prisma.$queryRaw<Array<{ used: number }>>`
+      SELECT
+        COALESCE(SUM(
+          COALESCE((metadata->>'sent')::int, 0) +
+          COALESCE((metadata->>'failed')::int, 0)
+        ), 0)::int AS "used"
+      FROM "user_history"
+      WHERE "action" = 'line_trigger_delivery_executed'
+        AND "createdAt" >= ${getStartOfCurrentMonthInJstUtc()}
+        AND "createdAt" < ${getStartOfNextMonthInJstUtc()}
+        ${adminUser.officialAccountId
+          ? Prisma.sql`AND "officialAccountId" = ${adminUser.officialAccountId}`
+          : Prisma.empty}
+    `,
   ]);
+  const usedThisMonth = monthlyUsageRows[0]?.used ?? 0;
+  const remainingThisMonth = Math.max(MONTHLY_LINE_DELIVERY_LIMIT - usedThisMonth, 0);
 
   const deliveryHistory: DeliveryHistoryRow[] = histories.map((row) => {
     const metadata = (row.metadata ?? {}) as Record<string, unknown>;
@@ -66,6 +104,9 @@ export default async function AdminSpotDeliveryPage() {
   return (
     <SpotDeliveryClient
       deliveryHistory={deliveryHistory}
+      monthlyLimit={MONTHLY_LINE_DELIVERY_LIMIT}
+      monthlyUsed={usedThisMonth}
+      monthlyRemaining={remainingThisMonth}
       triggerSettings={triggerSettings.map((row) => ({
         id: row.id,
         title: row.title,

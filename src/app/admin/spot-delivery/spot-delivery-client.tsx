@@ -27,6 +27,9 @@ type TriggerSetting = {
 type Props = {
   deliveryHistory: DeliveryHistory[];
   triggerSettings: TriggerSetting[];
+  monthlyLimit: number;
+  monthlyUsed: number;
+  monthlyRemaining: number;
 };
 
 function formatDeliveryDate(iso: string) {
@@ -55,7 +58,13 @@ function formatTriggerType(triggerType: TriggerSetting["triggerType"]) {
   return "ランクアップ時";
 }
 
-export default function SpotDeliveryClient({ deliveryHistory, triggerSettings }: Props) {
+export default function SpotDeliveryClient({
+  deliveryHistory,
+  triggerSettings,
+  monthlyLimit,
+  monthlyUsed,
+  monthlyRemaining,
+}: Props) {
   const [activeTab, setActiveTab] = useState<"spot" | "trigger">("spot");
   const [triggerRows, setTriggerRows] = useState(triggerSettings);
   const [updatingTriggerId, setUpdatingTriggerId] = useState<string | null>(null);
@@ -120,7 +129,12 @@ export default function SpotDeliveryClient({ deliveryHistory, triggerSettings }:
 
   return (
     <div className="w-full space-y-4 p-4">
-      <h1 className="mx-auto w-[90%] text-xl font-bold">LINE配信</h1>
+      <div className="mx-auto flex w-[90%] items-end justify-between">
+        <h1 className="text-xl font-bold">LINE配信</h1>
+        <p className="text-xs text-[#64748b]">
+          残り配信可能数 {monthlyRemaining}/{monthlyLimit}（今月送信 {monthlyUsed}通）
+        </p>
+      </div>
       <section className="mx-auto w-[90%] rounded-xl border border-[#dbe2ea] bg-white shadow-sm">
         <div className="border-b border-[#e2e8f0] px-4 pt-3">
           <div className="flex gap-4">
