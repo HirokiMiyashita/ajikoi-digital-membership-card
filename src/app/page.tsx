@@ -212,10 +212,6 @@ export default function Home() {
 
         // 起動時はまず users テーブル同期まで戻す（段階的に機能を戻す）
         setProfile(userProfile);
-        // const syncResult = await rpcClient.user.getFromLiff({
-        //   userId: userProfile.userId,
-        //   displayName: userProfile.displayName,
-        // });
         const syncResult = await rpcClient.user.upsertFromLiff({
           userId: userProfile.userId,
           displayName: userProfile.displayName,

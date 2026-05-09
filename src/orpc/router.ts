@@ -1182,58 +1182,6 @@ export const appRouter = {
       }),
   },
   user: {
-    getFromLiff: os
-      .input(
-        z.object({
-          userId: z.string().min(1),
-        }),
-      )
-      .handler(async ({ input }) => {
-        const startedAt = Date.now();
-        const ranksPromise = getCachedRanks();
-        const user = await prisma.user.findUnique({
-          where: { userId: input.userId },
-          select: {
-            points: true,
-            role: true,
-            lastCheckInAt: true,
-            surveyId: true,
-          },
-        });
-        const fetchedAt = Date.now();
-
-        const points = user?.points ?? 0;
-        const role = user?.role ?? null;
-        const checkedInToday = isCheckedInToday(user?.lastCheckInAt ?? null);
-        const hasSurvey = Boolean(user?.surveyId);
-        const ranks = await ranksPromise;
-        const currentRank = findRankByPoints(ranks, points);
-        const nextRank = findNextRankByPoints(ranks, points);
-        const rankedAt = Date.now();
-
-        const elapsedMs = Date.now() - startedAt;
-        if (elapsedMs >= 300) {
-          console.info("[user.getFromLiff-ms]", {
-            total: elapsedMs,
-            fetchUser: fetchedAt - startedAt,
-            resolveRanks: rankedAt - fetchedAt,
-          });
-        }
-
-        return {
-          ok: true,
-          provider: "prisma",
-          points,
-          nextRank: currentRank.id,
-          currentRankName: currentRank.name,
-          nextRankName: nextRank?.name ?? null,
-          pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - points, 0) : 0,
-          checkedInToday,
-          hasSurvey,
-          role,
-          signupGiftTitle: null,
-        };
-      }),
     upsertFromLiff: os
       .input(
         z.object({
