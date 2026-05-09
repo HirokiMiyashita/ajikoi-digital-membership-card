@@ -2150,7 +2150,31 @@ export const appRouter = {
         `;
 
         if (Number(updatedCount) === 0) {
-          throw new Error("本日の入店ポイントはすでに付与済みです。");
+          const existingUser = await prisma.user.findUnique({
+            where: {
+              userId: input.userId,
+            },
+          });
+          if (!existingUser) {
+            throw new Error("ユーザーが見つかりません。");
+          }
+          const currentRank = await resolveRankByPoints(existingUser.points);
+          const nextRank = await resolveNextRankByPoints(existingUser.points);
+          return {
+            ok: true,
+            points: existingUser.points,
+            currentRankName: currentRank.name,
+            nextRankName: nextRank?.name ?? null,
+            pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - existingUser.points, 0) : 0,
+            checkedInToday: true,
+            alreadyCheckedInToday: true,
+            grantedGiftTitles: [] as string[],
+            gacha: {
+              eligible: false,
+              winProbability: 0,
+              previewGift: null,
+            },
+          };
         }
 
         const updatedUser = await prisma.user.findUnique({
@@ -2306,6 +2330,7 @@ export const appRouter = {
           nextRankName: nextRank?.name ?? null,
           pointsToNextRank: nextRank ? Math.max(nextRank.minPoints - updatedUser.points, 0) : 0,
           checkedInToday: true,
+          alreadyCheckedInToday: false,
           grantedGiftTitles,
           gacha,
         };

@@ -276,9 +276,6 @@ export default function Home() {
           setStaffCanOpen(false);
           setStaffCanClose(false);
         }
-        if (syncResult.checkedInToday) {
-          setScanMessage("本日の入店ポイントは付与済みです。");
-        }
         if (syncResult.signupGiftTitle) {
           setToastMessage(`会員登録特典「${syncResult.signupGiftTitle}」を獲得しました。`);
           setTimeout(() => setToastMessage(null), 2600);
@@ -339,7 +336,6 @@ export default function Home() {
 
     // 同日付与済みならAPIを叩かず即時終了する
     if (checkedInToday) {
-      setScanMessage("本日の入店ポイントは付与済みです。");
       url.searchParams.delete("checkinToken");
       window.history.replaceState({}, "", url.toString());
       setNeedsSurvey(pendingSurveyRef.current);
@@ -363,6 +359,9 @@ export default function Home() {
         setNextRankName(result.nextRankName);
         setPointsToNextRank(result.pointsToNextRank);
         setCheckedInToday(result.checkedInToday);
+        if (result.alreadyCheckedInToday) {
+          return;
+        }
         const giftSuffix =
           result.grantedGiftTitles.length > 0
             ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
