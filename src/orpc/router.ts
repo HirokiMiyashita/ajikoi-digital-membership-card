@@ -1,6 +1,7 @@
 import { os } from "@orpc/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { createHash } from "crypto";
 
 import {
   ONBOARDING_SURVEY_PRESETS,
@@ -328,6 +329,8 @@ function resolveGiftExpiryAt(gift: {
 
 type MemberBenefitSettingWithRanks = {
   signupGiftId: string | null;
+  reviewGiftId: string | null;
+  reviewPasswordHash: string | null;
   topRankLoopGiftId: string | null;
   rankBenefitGiftSettings: Array<{
     rankId: string;
@@ -341,6 +344,8 @@ async function getMemberBenefitSetting(officialAccountId: string | null) {
     where: { scopeKey },
     select: {
       signupGiftId: true,
+      reviewGiftId: true,
+      reviewPasswordHash: true,
       topRankLoopGiftId: true,
       rankBenefitGiftSettings: {
         select: {
@@ -351,6 +356,10 @@ async function getMemberBenefitSetting(officialAccountId: string | null) {
     },
   });
   return setting as MemberBenefitSettingWithRanks | null;
+}
+
+function hashReviewPassword(password: string) {
+  return createHash("sha256").update(`review-password:${password}`).digest("hex");
 }
 
 async function issueGiftFromSetting(params: {
@@ -1856,6 +1865,85 @@ export const appRouter = {
           giftTitle: gift.title,
           userGiftId: created.id,
           alreadyClaimed: false,
+        };
+      }),
+    claimReviewGiftWithPassword: os
+      .input(
+        z.object({
+          userId: z.string().min(1),
+          password: z.string().regex(/^\d{4}$/),
+        }),
+      )
+      .handler(async ({ input }) => {
+        const user = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: {
+            userId: true,
+            officialAccountId: true,
+            googleReviewId: true,
+          },
+        });
+        if (!user) {
+          throw new Error("ユーザーが見つかりません。");
+        }
+        if (user.googleReviewId) {
+          return {
+            ok: true,
+            alreadyReviewed: true,
+            giftTitle: null as string | null,
+          };
+        }
+
+        const officialAccountId = user.officialAccountId ?? (await resolveOfficialAccountId());
+        const benefitSetting = await getMemberBenefitSetting(officialAccountId);
+        if (!benefitSetting?.reviewGiftId) {
+          throw new Error("口コミ特典ギフトが未設定です。");
+        }
+        if (!benefitSetting.reviewPasswordHash) {
+          throw new Error("口コミパスワードが未設定です。");
+        }
+
+        const inputHash = hashReviewPassword(input.password);
+        if (inputHash !== benefitSetting.reviewPasswordHash) {
+          throw new Error("パスワードが正しくありません。");
+        }
+
+        const grantedTitle = await issueGiftFromSetting({
+          userId: user.userId,
+          giftId: benefitSetting.reviewGiftId,
+          officialAccountId,
+          action: "member_google_review_gift_granted",
+          dedupeKey: "eventKey",
+          dedupeValue: "google_review",
+        });
+
+        if (!grantedTitle) {
+          return {
+            ok: true,
+            alreadyReviewed: true,
+            giftTitle: null as string | null,
+          };
+        }
+
+        const review = await prisma.googleReview.create({
+          data: {
+            reviewText: "google-review-verified",
+          },
+          select: {
+            id: true,
+          },
+        });
+        await prisma.user.update({
+          where: { userId: user.userId },
+          data: {
+            googleReviewId: review.id,
+          },
+        });
+
+        return {
+          ok: true,
+          alreadyReviewed: false,
+          giftTitle: grantedTitle,
         };
       }),
     addVisitPoint: os

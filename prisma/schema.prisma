@@ -286,6 +286,7 @@ model MemberBenefitSetting {
   officialAccountId       String?
   signupGiftId            String?
   reviewGiftId            String?
+  reviewPasswordHash      String?
   topRankLoopGiftId       String?
   officialAccount         OfficialAccount?         @relation(fields: [officialAccountId], references: [id])
   signupGift              Gift?                    @relation("SignupBenefitGift", fields: [signupGiftId], references: [id], onDelete: SetNull)

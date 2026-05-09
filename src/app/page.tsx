@@ -164,6 +164,9 @@ export default function Home() {
   const [hasGoogleReview, setHasGoogleReview] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isReviewDoneModalOpen, setIsReviewDoneModalOpen] = useState(false);
+  const [isReviewPasswordModalOpen, setIsReviewPasswordModalOpen] = useState(false);
+  const [reviewPassword, setReviewPassword] = useState("");
+  const [isReviewPasswordSubmitting, setIsReviewPasswordSubmitting] = useState(false);
   const claimedGiftQueryRef = useRef<string | null>(null);
   const autoCheckinTokenRef = useRef<string | null>(null);
   const pendingSurveyRef = useRef(false);
@@ -461,6 +464,39 @@ export default function Home() {
 
   const handleCloseGachaPopup = () => {
     setGachaPopup((prev) => ({ ...prev, open: false }));
+  };
+
+  const handleSubmitReviewPassword = async () => {
+    if (!profile) return;
+    if (!/^\d{4}$/.test(reviewPassword)) {
+      setToastMessage("4桁のパスワードを入力してください。");
+      setTimeout(() => setToastMessage(null), 2200);
+      return;
+    }
+    setIsReviewPasswordSubmitting(true);
+    try {
+      const result = await rpcClient.user.claimReviewGiftWithPassword({
+        userId: profile.userId,
+        password: reviewPassword,
+      });
+      if (result.alreadyReviewed) {
+        setToastMessage("口コミ特典は付与済みです。");
+      } else if (result.giftTitle) {
+        setToastMessage(`口コミ特典「${result.giftTitle}」を獲得しました。`);
+      } else {
+        setToastMessage("口コミ特典を反映しました。");
+      }
+      setTimeout(() => setToastMessage(null), 2400);
+      setHasGoogleReview(true);
+      setIsReviewPasswordModalOpen(false);
+      setReviewPassword("");
+      await fetchOwnedGifts(profile.userId);
+    } catch (error) {
+      setToastMessage(error instanceof Error ? error.message : "口コミ特典の反映に失敗しました。");
+      setTimeout(() => setToastMessage(null), 2400);
+    } finally {
+      setIsReviewPasswordSubmitting(false);
+    }
   };
 
   const handleUseGiftClick = async (gift: OwnedGift) => {
@@ -877,10 +913,50 @@ export default function Home() {
             </p>
             <button
               type="button"
-              onClick={() => setIsReviewDoneModalOpen(false)}
+              onClick={() => {
+                setIsReviewDoneModalOpen(false);
+                setIsReviewPasswordModalOpen(true);
+              }}
               className="mt-5 w-full rounded-lg bg-[#0f766e] py-3 text-sm font-bold text-white"
             >
               完了
+            </button>
+          </section>
+        </div>
+      ) : null}
+      {isReviewPasswordModalOpen ? (
+        <div className="fixed inset-0 z-59 flex items-center justify-center bg-black/35 px-6">
+          <section className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-xl">
+            <h3 className="text-lg font-bold text-[#0f172a]">確認用パスワードを入力</h3>
+            <p className="mt-2 text-sm text-[#64748b]">スタッフ確認用の4桁パスワードを入力してください。</p>
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              pattern="[0-9]*"
+              value={reviewPassword}
+              onChange={(event) => setReviewPassword(event.target.value.replace(/\D/g, "").slice(0, 4))}
+              placeholder="4桁の数字"
+              className="mt-4 w-full rounded-lg border border-[#cbd5e1] px-3 py-3 text-center text-xl tracking-[0.3em] text-[#0f172a] outline-none focus:border-[#14b8a6]"
+            />
+            <button
+              type="button"
+              onClick={() => void handleSubmitReviewPassword()}
+              disabled={isReviewPasswordSubmitting}
+              className="mt-4 w-full rounded-lg bg-[#0f766e] py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
+            >
+              {isReviewPasswordSubmitting ? "反映中..." : "特典を反映する"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsReviewPasswordModalOpen(false);
+                setReviewPassword("");
+              }}
+              disabled={isReviewPasswordSubmitting}
+              className="mt-3 w-full rounded-lg border border-[#cbd5e1] py-2 text-sm font-semibold text-[#334155] disabled:opacity-50"
+            >
+              閉じる
             </button>
           </section>
         </div>
