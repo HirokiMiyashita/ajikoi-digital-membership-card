@@ -54,6 +54,8 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
   const [targetRankIds, setTargetRankIds] = useState<string[]>([]);
   const [targetGender, setTargetGender] = useState<"male" | "female" | "other" | null>(null);
   const [targetVisitCountSegments, setTargetVisitCountSegments] = useState<DeliveryVisitCountSegment[]>([]);
+  const [liveTargetCount, setLiveTargetCount] = useState(targetCount);
+  const [isLoadingTargetCount, setIsLoadingTargetCount] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -99,6 +101,39 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
     setIsError(error);
     setTimeout(() => setToast(null), 2400);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setIsLoadingTargetCount(true);
+      try {
+        const response = await fetch("/api/admin/spot-delivery/targets/count", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rankIds: targetRankIds,
+            gender: targetGender,
+            visitCountSegments: targetVisitCountSegments,
+          }),
+        });
+        const json = (await response.json()) as { ok?: boolean; count?: number };
+        if (!cancelled && response.ok && json.ok && typeof json.count === "number") {
+          setLiveTargetCount(json.count);
+        }
+      } catch {
+        // 件数表示のためだけのAPIなので失敗時は静かに無視する
+      } finally {
+        if (!cancelled) {
+          setIsLoadingTargetCount(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [targetGender, targetRankIds, targetVisitCountSegments]);
 
   const handleSaveDraft = () => {
     showToast("下書きを保存しました。");
@@ -303,7 +338,9 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
             />
           </div>
           <div className="flex items-center gap-2">
-            <p className="hidden text-xs text-[#64748b] md:block">配信対象 {targetCount}人</p>
+            <p className="hidden text-xs text-[#64748b] md:block">
+              配信対象 {isLoadingTargetCount ? "..." : liveTargetCount}人
+            </p>
             <button
               type="button"
               onClick={handleSaveDraft}
