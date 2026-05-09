@@ -928,7 +928,6 @@ export default function Home() {
         <div className="fixed inset-0 z-59 flex items-center justify-center bg-black/35 px-6">
           <section className="w-full max-w-sm rounded-2xl bg-white p-5 text-center shadow-xl">
             <h3 className="text-lg font-bold text-[#0f172a]">確認用パスワードを入力</h3>
-            <p className="mt-2 text-sm text-[#64748b]">スタッフ確認用の4桁パスワードを入力してください。</p>
             <input
               type="password"
               inputMode="numeric"
@@ -936,7 +935,6 @@ export default function Home() {
               pattern="[0-9]*"
               value={reviewPassword}
               onChange={(event) => setReviewPassword(event.target.value.replace(/\D/g, "").slice(0, 4))}
-              placeholder="4桁の数字"
               className="mt-4 w-full rounded-lg border border-[#cbd5e1] px-3 py-3 text-center text-xl tracking-[0.3em] text-[#0f172a] outline-none focus:border-[#14b8a6]"
             />
             <button
