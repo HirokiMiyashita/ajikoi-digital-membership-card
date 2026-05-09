@@ -169,22 +169,21 @@ export default function Home() {
     pendingSurveyRef.current = pendingSurvey;
   }, [pendingSurvey]);
 
-  const fetchOwnedGifts = async (userId: string) => {
-    try {
-      const result = await rpcClient.user.listOwnedGifts({
-        userId,
-      });
-      setOwnedGifts(result.gifts);
-    } catch {
-      // ignore fetch error to keep top flow alive
-    }
-  };
+  // const fetchOwnedGifts = async (userId: string) => {
+  //   try {
+  //     const result = await rpcClient.user.listOwnedGifts({
+  //       userId,
+  //     });
+  //     setOwnedGifts(result.gifts);
+  //   } catch {
+  //     // ignore fetch error to keep top flow alive
+  //   }
+  // };
 
   useEffect(() => {
     let cancelled = false;
 
     const initializeLiff = async () => {
-      const startedAt = performance.now();
       setIsProfileLoading(true);
       if (!liffId) {
         if (!cancelled) {
@@ -207,83 +206,66 @@ export default function Home() {
 
         const userProfile = await liff.getProfile();
         const profileFetchedAt = performance.now();
-        const syncResult = await rpcClient.user.upsertFromLiff({
-          userId: userProfile.userId,
-          displayName: userProfile.displayName,
-        });
-        const syncedAt = performance.now();
         if (cancelled) {
           return;
         }
 
+        // 起動時はLIFFプロフィールだけを取得する（段階的に機能を戻すため）
         setProfile(userProfile);
-        setPoints(syncResult.points);
-        setUserRole(syncResult.role);
-        setCurrentRankName(syncResult.currentRankName);
-        setNextRankName(syncResult.nextRankName);
-        setPointsToNextRank(syncResult.pointsToNextRank);
-        setCheckedInToday(syncResult.checkedInToday);
-        const publicStoreStatusPromise = rpcClient.user.getStoreStatus({});
-
-        if (syncResult.role === "staff") {
-          setPendingSurvey(false);
-        } else if (syncResult.hasSurvey) {
-          setPendingSurvey(false);
-        } else {
-          const surveyConfigResult = await rpcClient.user.getOnboardingSurveyQuestions({});
-          const questions = surveyConfigResult.questions as SurveyQuestionConfig[];
-          const activeQuestions = questions
-            .filter((question: SurveyQuestionConfig) => question.isEnabled)
-            .sort((a: SurveyQuestionConfig, b: SurveyQuestionConfig) => a.sortOrder - b.sortOrder);
-          setSurveyQuestions(
-            questions.length > 0
-              ? questions
-              : defaultSurveyQuestions,
-          );
-          setPendingSurvey(activeQuestions.length > 0);
-        }
-        setNeedsSurvey(false);
-        if (syncResult.role === "staff") {
-          const staffStatus = await rpcClient.user.getStaffStoreStatus({
-            userId: userProfile.userId,
-          });
-          setIsStaffPortal(staffStatus.authorized);
-          setStaffStoreIsOpen(staffStatus.isOpen);
-          setStaffCanOpen(staffStatus.canOpen);
-          setStaffCanClose(staffStatus.canClose);
-        } else {
-          setIsStaffPortal(false);
-          setStaffStoreIsOpen(false);
-          setStaffCanOpen(false);
-          setStaffCanClose(false);
-        }
-        if (syncResult.checkedInToday) {
-          setScanMessage("本日の入店ポイントは付与済みです。");
-        }
-        if (syncResult.signupGiftTitle) {
-          setToastMessage(`会員登録特典「${syncResult.signupGiftTitle}」を獲得しました。`);
-          setTimeout(() => setToastMessage(null), 2600);
-        }
-        // 初期同期の重いRPCが終わってからギフト一覧を取得する。
-        void fetchOwnedGifts(userProfile.userId);
+        // 一時停止中: 初期RPC同期（段階的に戻す）
+        // const syncResult = await rpcClient.user.upsertFromLiff({
+        //   userId: userProfile.userId,
+        //   displayName: userProfile.displayName,
+        // });
+        // setPoints(syncResult.points);
+        // setUserRole(syncResult.role);
+        // setCurrentRankName(syncResult.currentRankName);
+        // setNextRankName(syncResult.nextRankName);
+        // setPointsToNextRank(syncResult.pointsToNextRank);
+        // setCheckedInToday(syncResult.checkedInToday);
+        // const publicStoreStatusPromise = rpcClient.user.getStoreStatus({});
+        // if (syncResult.role === "staff") {
+        //   setPendingSurvey(false);
+        // } else if (syncResult.hasSurvey) {
+        //   setPendingSurvey(false);
+        // } else {
+        //   const surveyConfigResult = await rpcClient.user.getOnboardingSurveyQuestions({});
+        //   const questions = surveyConfigResult.questions as SurveyQuestionConfig[];
+        //   const activeQuestions = questions
+        //     .filter((question: SurveyQuestionConfig) => question.isEnabled)
+        //     .sort((a: SurveyQuestionConfig, b: SurveyQuestionConfig) => a.sortOrder - b.sortOrder);
+        //   setSurveyQuestions(questions.length > 0 ? questions : defaultSurveyQuestions);
+        //   setPendingSurvey(activeQuestions.length > 0);
+        // }
+        // setNeedsSurvey(false);
+        // if (syncResult.role === "staff") {
+        //   const staffStatus = await rpcClient.user.getStaffStoreStatus({
+        //     userId: userProfile.userId,
+        //   });
+        //   setIsStaffPortal(staffStatus.authorized);
+        //   setStaffStoreIsOpen(staffStatus.isOpen);
+        //   setStaffCanOpen(staffStatus.canOpen);
+        //   setStaffCanClose(staffStatus.canClose);
+        // } else {
+        //   setIsStaffPortal(false);
+        //   setStaffStoreIsOpen(false);
+        //   setStaffCanOpen(false);
+        //   setStaffCanClose(false);
+        // }
+        // if (syncResult.checkedInToday) {
+        //   setScanMessage("本日の入店ポイントは付与済みです。");
+        // }
+        // if (syncResult.signupGiftTitle) {
+        //   setToastMessage(`会員登録特典「${syncResult.signupGiftTitle}」を獲得しました。`);
+        //   setTimeout(() => setToastMessage(null), 2600);
+        // }
+        // void fetchOwnedGifts(userProfile.userId);
         setIsProfileLoading(false);
-        void publicStoreStatusPromise
-          .then((publicStoreStatus) => {
-            if (!cancelled) {
-              setStoreIsOpen(publicStoreStatus.isOpen);
-            }
-          })
-          .catch(() => {
-            if (!cancelled) {
-              setStoreIsOpen(false);
-            }
-          });
         console.info("[liff-init-ms]", {
           importLiff: Math.round(importedAt - importStartedAt),
           liffInit: Math.round(initializedAt - importedAt),
           getProfile: Math.round(profileFetchedAt - initializedAt),
-          upsertFromLiff: Math.round(syncedAt - profileFetchedAt),
-          totalToReady: Math.round(syncedAt - startedAt),
+          totalToReady: Math.round(profileFetchedAt - importStartedAt),
         });
       } catch (error) {
         console.error(error);
@@ -300,111 +282,111 @@ export default function Home() {
     };
   }, [liffId]);
 
-  useEffect(() => {
-    if (!profile || typeof window === "undefined") return;
-    if (userRole === "staff" || isStaffPortal) {
-      setNeedsSurvey(false);
-      return;
-    }
+  // useEffect(() => {
+  //   if (!profile || typeof window === "undefined") return;
+  //   if (userRole === "staff" || isStaffPortal) {
+  //     setNeedsSurvey(false);
+  //     return;
+  //   }
+  //
+  //   const url = new URL(window.location.href);
+  //   const checkinToken = url.searchParams.get("checkinToken")?.trim() ?? "";
+  //   if (!checkinToken) {
+  //     setNeedsSurvey(pendingSurvey);
+  //     return;
+  //   }
+  //   if (autoCheckinTokenRef.current === checkinToken) {
+  //     setNeedsSurvey(pendingSurvey);
+  //     return;
+  //   }
+  //   autoCheckinTokenRef.current = checkinToken;
+  //
+  //   // 同日付与済みならAPIを叩かず即時終了する
+  //   if (checkedInToday) {
+  //     setScanMessage("本日の入店ポイントは付与済みです。");
+  //     url.searchParams.delete("checkinToken");
+  //     window.history.replaceState({}, "", url.toString());
+  //     setNeedsSurvey(pendingSurveyRef.current);
+  //     return;
+  //   }
+  //
+  //   const runAutoCheckin = async () => {
+  //     setIsAutoCheckinProcessing(true);
+  //     setScanMessage("来店ポイントを付与しています...");
+  //     setGachaPopup({ open: false, won: false, giftTitle: null });
+  //     try {
+  //       setIsGachaJudging(true);
+  //       const result = await rpcClient.user.addVisitPoint({
+  //         userId: profile.userId,
+  //         qrValue: checkinToken,
+  //       });
+  //       setPoints(result.points);
+  //       setCurrentRankName(result.currentRankName);
+  //       setNextRankName(result.nextRankName);
+  //       setPointsToNextRank(result.pointsToNextRank);
+  //       setCheckedInToday(result.checkedInToday);
+  //       const giftSuffix =
+  //         result.grantedGiftTitles.length > 0
+  //           ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
+  //           : "";
+  //       if (result.gacha?.executed) {
+  //         setGachaPopup({
+  //           open: true,
+  //           won: result.gacha.won,
+  //           giftTitle: result.gacha.giftTitle ?? null,
+  //         });
+  //         setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャ結果を確認してください。`);
+  //       } else {
+  //         setScanMessage(`+1ポイントを付与しました。${giftSuffix}`.trim());
+  //       }
+  //       await fetchOwnedGifts(profile.userId);
+  //     } catch (error) {
+  //       setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
+  //     } finally {
+  //       setIsGachaJudging(false);
+  //       setIsAutoCheckinProcessing(false);
+  //       url.searchParams.delete("checkinToken");
+  //       window.history.replaceState({}, "", url.toString());
+  //       setNeedsSurvey(pendingSurveyRef.current);
+  //     }
+  //   };
+  //
+  //   void runAutoCheckin();
+  // }, [checkedInToday, isStaffPortal, pendingSurvey, profile, userRole]);
 
-    const url = new URL(window.location.href);
-    const checkinToken = url.searchParams.get("checkinToken")?.trim() ?? "";
-    if (!checkinToken) {
-      setNeedsSurvey(pendingSurvey);
-      return;
-    }
-    if (autoCheckinTokenRef.current === checkinToken) {
-      setNeedsSurvey(pendingSurvey);
-      return;
-    }
-    autoCheckinTokenRef.current = checkinToken;
-
-    // 同日付与済みならAPIを叩かず即時終了する
-    if (checkedInToday) {
-      setScanMessage("本日の入店ポイントは付与済みです。");
-      url.searchParams.delete("checkinToken");
-      window.history.replaceState({}, "", url.toString());
-      setNeedsSurvey(pendingSurveyRef.current);
-      return;
-    }
-
-    const runAutoCheckin = async () => {
-      setIsAutoCheckinProcessing(true);
-      setScanMessage("来店ポイントを付与しています...");
-      setGachaPopup({ open: false, won: false, giftTitle: null });
-      try {
-        setIsGachaJudging(true);
-        const result = await rpcClient.user.addVisitPoint({
-          userId: profile.userId,
-          qrValue: checkinToken,
-        });
-        setPoints(result.points);
-        setCurrentRankName(result.currentRankName);
-        setNextRankName(result.nextRankName);
-        setPointsToNextRank(result.pointsToNextRank);
-        setCheckedInToday(result.checkedInToday);
-        const giftSuffix =
-          result.grantedGiftTitles.length > 0
-            ? ` 特典「${result.grantedGiftTitles.join(" / ")}」を獲得しました。`
-            : "";
-        if (result.gacha?.executed) {
-          setGachaPopup({
-            open: true,
-            won: result.gacha.won,
-            giftTitle: result.gacha.giftTitle ?? null,
-          });
-          setScanMessage(`+1ポイントを付与しました。${giftSuffix}ガチャ結果を確認してください。`);
-        } else {
-          setScanMessage(`+1ポイントを付与しました。${giftSuffix}`.trim());
-        }
-        await fetchOwnedGifts(profile.userId);
-      } catch (error) {
-        setScanMessage(error instanceof Error ? error.message : "ポイント付与に失敗しました。");
-      } finally {
-        setIsGachaJudging(false);
-        setIsAutoCheckinProcessing(false);
-        url.searchParams.delete("checkinToken");
-        window.history.replaceState({}, "", url.toString());
-        setNeedsSurvey(pendingSurveyRef.current);
-      }
-    };
-
-    void runAutoCheckin();
-  }, [checkedInToday, isStaffPortal, pendingSurvey, profile, userRole]);
-
-  useEffect(() => {
-    const claimGiftFromQuery = async () => {
-      if (!profile) return;
-      if (typeof window === "undefined") return;
-      const giftId = new URLSearchParams(window.location.search).get("giftId");
-      if (!giftId) return;
-      if (claimedGiftQueryRef.current === giftId) return;
-      claimedGiftQueryRef.current = giftId;
-
-      setScanMessage("giftを獲得中...");
-      try {
-        const result = await rpcClient.user.claimGiftFromLink({
-          userId: profile.userId,
-          giftId,
-        });
-        if (result.alreadyClaimed) {
-          setToastMessage(`「${result.giftTitle}」は既に獲得済みです。`);
-          setScanMessage("このギフトは既に獲得済みです。");
-        } else {
-          setToastMessage(`「${result.giftTitle}」を獲得しました。`);
-          setScanMessage("ギフトを獲得しました。");
-        }
-        setTimeout(() => setToastMessage(null), 2200);
-        await fetchOwnedGifts(profile.userId);
-        const url = new URL(window.location.href);
-        url.searchParams.delete("giftId");
-        window.history.replaceState({}, "", url.toString());
-      } catch (error) {
-        setScanMessage(error instanceof Error ? error.message : "ギフトの獲得に失敗しました。");
-      }
-    };
-    void claimGiftFromQuery();
-  }, [profile]);
+  // useEffect(() => {
+  //   const claimGiftFromQuery = async () => {
+  //     if (!profile) return;
+  //     if (typeof window === "undefined") return;
+  //     const giftId = new URLSearchParams(window.location.search).get("giftId");
+  //     if (!giftId) return;
+  //     if (claimedGiftQueryRef.current === giftId) return;
+  //     claimedGiftQueryRef.current = giftId;
+  //
+  //     setScanMessage("giftを獲得中...");
+  //     try {
+  //       const result = await rpcClient.user.claimGiftFromLink({
+  //         userId: profile.userId,
+  //         giftId,
+  //       });
+  //       if (result.alreadyClaimed) {
+  //         setToastMessage(`「${result.giftTitle}」は既に獲得済みです。`);
+  //         setScanMessage("このギフトは既に獲得済みです。");
+  //       } else {
+  //         setToastMessage(`「${result.giftTitle}」を獲得しました。`);
+  //         setScanMessage("ギフトを獲得しました。");
+  //       }
+  //       setTimeout(() => setToastMessage(null), 2200);
+  //       await fetchOwnedGifts(profile.userId);
+  //       const url = new URL(window.location.href);
+  //       url.searchParams.delete("giftId");
+  //       window.history.replaceState({}, "", url.toString());
+  //     } catch (error) {
+  //       setScanMessage(error instanceof Error ? error.message : "ギフトの獲得に失敗しました。");
+  //     }
+  //   };
+  //   void claimGiftFromQuery();
+  // }, [profile]);
 
   const progressToNextRank =
     nextRankName === null ? 100 : Math.min(((points + pointsToNextRank) === 0 ? 0 : (points / (points + pointsToNextRank)) * 100), 100);
@@ -481,7 +463,7 @@ export default function Home() {
       setArmedUseGiftId(null);
       setToastMessage("特典が使用されました。");
       setTimeout(() => setToastMessage(null), 2200);
-      await fetchOwnedGifts(profile.userId);
+      // await fetchOwnedGifts(profile.userId);
     } catch (error) {
       setToastMessage(error instanceof Error ? error.message : "特典の利用に失敗しました。");
       setTimeout(() => setToastMessage(null), 2200);
