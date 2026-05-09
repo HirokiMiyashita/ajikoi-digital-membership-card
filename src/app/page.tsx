@@ -853,7 +853,7 @@ export default function Home() {
       ) : null}
       {gachaStartPopup.open ? (
         <div className="fixed inset-0 z-56 flex items-center justify-center bg-black/35 px-6">
-          <div className="w-full max-w-sm">
+          <div className="w-full max-w-[20rem]">
             <p className="mx-auto w-fit rounded-full bg-white px-4 py-1 text-base font-bold text-[#0f172a]">
               来店するたびチャレンジ
             </p>
