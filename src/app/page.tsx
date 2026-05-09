@@ -265,6 +265,17 @@ export default function Home() {
         }
         void fetchOwnedGifts(userProfile.userId);
         setIsProfileLoading(false);
+        void publicStoreStatusPromise
+          .then((publicStoreStatus) => {
+            if (!cancelled) {
+              setStoreIsOpen(publicStoreStatus.isOpen);
+            }
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setStoreIsOpen(false);
+            }
+          });
         console.info("[liff-init-ms]", {
           importLiff: Math.round(importedAt - importStartedAt),
           liffInit: Math.round(initializedAt - importedAt),
