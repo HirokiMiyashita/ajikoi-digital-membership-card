@@ -14,6 +14,7 @@ Then set your LIFF ID in `.env.local`:
 
 ```bash
 NEXT_PUBLIC_LIFF_ID=YOUR_LIFF_ID_HERE
+NEXT_PUBLIC_LINE_ADD_FRIEND_URL=https://lin.ee/xxxxxxxx
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/ajikoi_local?schema=public"
 DIRECT_URL="postgresql://postgres:postgres@localhost:5432/ajikoi_local?schema=public"
 ```
@@ -66,6 +67,7 @@ Set that URL (or a specific path like `/`) as the LIFF endpoint URL in LINE Deve
 - LIFF endpoint URL: `https://...` (HTTPS required)
 - Scope: `openid` and `profile` are required for profile access
 - Use the generated LIFF ID in `NEXT_PUBLIC_LIFF_ID`
+- Set your OA add-friend URL in `NEXT_PUBLIC_LINE_ADD_FRIEND_URL` (e.g. `https://lin.ee/...`)
 
 ## 5) oRPC API
 

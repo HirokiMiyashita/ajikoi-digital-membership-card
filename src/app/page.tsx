@@ -183,10 +183,15 @@ export default function Home() {
   const [isReviewPasswordModalOpen, setIsReviewPasswordModalOpen] = useState(false);
   const [reviewPassword, setReviewPassword] = useState("");
   const [isReviewPasswordSubmitting, setIsReviewPasswordSubmitting] = useState(false);
+  const [isLineFriend, setIsLineFriend] = useState<boolean | null>(null);
+  const [isCheckingFriendship, setIsCheckingFriendship] = useState(false);
+  const [friendshipError, setFriendshipError] = useState<string | null>(null);
   const claimedGiftQueryRef = useRef<string | null>(null);
   const autoCheckinTokenRef = useRef<string | null>(null);
   const pendingSurveyRef = useRef(false);
+  const liffRef = useRef<{ getFriendship: () => Promise<{ friendFlag: boolean }> } | null>(null);
   const liffId = process.env.NEXT_PUBLIC_LIFF_ID;
+  const lineAddFriendUrl = process.env.NEXT_PUBLIC_LINE_ADD_FRIEND_URL;
 
   useEffect(() => {
     pendingSurveyRef.current = pendingSurvey;
@@ -221,10 +226,24 @@ export default function Home() {
         const importedAt = performance.now();
         await liff.init({ liffId });
         const initializedAt = performance.now();
+        liffRef.current = liff;
 
         if (!liff.isLoggedIn()) {
           liff.login();
           return;
+        }
+
+        try {
+          const friendship = await liff.getFriendship();
+          if (!cancelled) {
+            setIsLineFriend(friendship.friendFlag);
+            setFriendshipError(null);
+          }
+        } catch {
+          if (!cancelled) {
+            setIsLineFriend(null);
+            setFriendshipError("友だち状態の確認に失敗しました。再確認をお試しください。");
+          }
         }
 
         const userProfile = await liff.getProfile();
@@ -312,8 +331,23 @@ export default function Home() {
 
     return () => {
       cancelled = true;
+      liffRef.current = null;
     };
   }, [liffId]);
+
+  const handleRefreshFriendship = async () => {
+    if (isCheckingFriendship || !liffRef.current) return;
+    setIsCheckingFriendship(true);
+    setFriendshipError(null);
+    try {
+      const friendship = await liffRef.current.getFriendship();
+      setIsLineFriend(friendship.friendFlag);
+    } catch {
+      setFriendshipError("友だち状態の確認に失敗しました。時間をおいて再度お試しください。");
+    } finally {
+      setIsCheckingFriendship(false);
+    }
+  };
 
   useEffect(() => {
     if (!profile || typeof window === "undefined") return;
@@ -767,6 +801,45 @@ export default function Home() {
             >
               口コミを書く
             </button>
+          </div>
+        </section>
+      ) : null}
+      {!isProfileLoading && isLineFriend === false ? (
+        <section className="mt-4 w-[94%] mx-auto overflow-hidden rounded-xl border border-[#bfdbfe] bg-white shadow-sm">
+          <div className="bg-[#dbeafe] px-4 py-2 text-center text-xs font-bold text-[#1d4ed8]">
+            公式LINE 友だち追加のお願い
+          </div>
+          <div className="px-5 py-4">
+            <p className="text-center text-sm leading-6 text-[#1e3a8a]">
+              友だち追加で最新情報やキャンペーンを受け取れます。
+              <br />
+              下のボタンから追加後に「再確認」を押してください。
+            </p>
+            {lineAddFriendUrl ? (
+              <a
+                href={lineAddFriendUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 flex w-full items-center justify-center rounded-lg bg-[#2563eb] px-4 py-3 text-sm font-bold text-white"
+              >
+                友だち追加する
+              </a>
+            ) : (
+              <p className="mt-4 text-center text-sm font-semibold text-[#b91c1c]">
+                友だち追加URLが未設定です（`NEXT_PUBLIC_LINE_ADD_FRIEND_URL`）。
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => void handleRefreshFriendship()}
+              disabled={isCheckingFriendship}
+              className="mt-3 w-full rounded-lg border border-[#bfdbfe] py-3 text-sm font-bold text-[#1d4ed8] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isCheckingFriendship ? "確認中..." : "友だち追加済みか再確認"}
+            </button>
+            {friendshipError ? (
+              <p className="mt-2 text-center text-xs font-semibold text-[#b91c1c]">{friendshipError}</p>
+            ) : null}
           </div>
         </section>
       ) : null}
