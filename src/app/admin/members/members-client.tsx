@@ -14,6 +14,8 @@ type MemberRow = {
   assignedOfficialAccountId: string | null;
   checkInCount: number;
   rankName: string;
+  registeredAt: string;
+  lastVisitedAt: string | null;
 };
 
 type MembersClientProps = {
@@ -21,13 +23,151 @@ type MembersClientProps = {
   officialAccounts: OfficialAccountOption[];
 };
 
+type MemberGiftOption = {
+  id: string;
+  title: string;
+};
+
+type MemberGiftRow = {
+  userGiftId: string;
+  giftId: string;
+  title: string;
+  issuedAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+};
+
 export default function MembersClient({ initialMembers, officialAccounts }: MembersClientProps) {
   const [members, setMembers] = useState(initialMembers);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dialogUser, setDialogUser] = useState<MemberRow | null>(null);
+  const [detailUser, setDetailUser] = useState<MemberRow | null>(null);
+  const [availableGifts, setAvailableGifts] = useState<MemberGiftOption[]>([]);
+  const [unusedGifts, setUnusedGifts] = useState<MemberGiftRow[]>([]);
+  const [usedGifts, setUsedGifts] = useState<MemberGiftRow[]>([]);
+  const [selectedGiftId, setSelectedGiftId] = useState("");
+  const [isGiftLoading, setIsGiftLoading] = useState(false);
+  const [isGiftMutating, setIsGiftMutating] = useState(false);
+  const [giftError, setGiftError] = useState<string | null>(null);
   const [dialogRole, setDialogRole] = useState<"staff" | null>(null);
   const [dialogOfficialAccountId, setDialogOfficialAccountId] = useState<string>("");
+
+  const formatDateTime = (value: string | null) => {
+    if (!value) {
+      return "未記録";
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return parsed.toLocaleString("ja-JP", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const resolveOfficialAccountLabel = (officialAccountId: string | null) => {
+    if (!officialAccountId) {
+      return "未設定";
+    }
+    return officialAccounts.find((account) => account.id === officialAccountId)?.label ?? officialAccountId;
+  };
+
+  const fetchMemberGifts = async (userId: string) => {
+    setIsGiftLoading(true);
+    setGiftError(null);
+    try {
+      const response = await fetch(`/api/admin/members/${encodeURIComponent(userId)}/gifts`);
+      const json = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        availableGifts?: MemberGiftOption[];
+        unusedGifts?: MemberGiftRow[];
+        usedGifts?: MemberGiftRow[];
+      };
+      if (!response.ok || !json.ok) {
+        throw new Error(json.message ?? "ギフト情報の取得に失敗しました。");
+      }
+      const nextAvailableGifts = json.availableGifts ?? [];
+      setAvailableGifts(nextAvailableGifts);
+      setUnusedGifts(json.unusedGifts ?? []);
+      setUsedGifts(json.usedGifts ?? []);
+      setSelectedGiftId((prev) => {
+        if (prev && nextAvailableGifts.some((gift) => gift.id === prev)) {
+          return prev;
+        }
+        return nextAvailableGifts[0]?.id ?? "";
+      });
+    } catch (error) {
+      setGiftError(error instanceof Error ? error.message : "ギフト情報の取得に失敗しました。");
+      setAvailableGifts([]);
+      setUnusedGifts([]);
+      setUsedGifts([]);
+      setSelectedGiftId("");
+    } finally {
+      setIsGiftLoading(false);
+    }
+  };
+
+  const openDetailModal = (member: MemberRow) => {
+    setDetailUser(member);
+    void fetchMemberGifts(member.userId);
+  };
+
+  const closeDetailModal = () => {
+    setDetailUser(null);
+    setGiftError(null);
+  };
+
+  const handleIssueGift = async () => {
+    if (!detailUser || !selectedGiftId || isGiftMutating) return;
+    setIsGiftMutating(true);
+    setGiftError(null);
+    try {
+      const response = await fetch(`/api/admin/members/${encodeURIComponent(detailUser.userId)}/gifts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ giftId: selectedGiftId }),
+      });
+      const json = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !json.ok) {
+        throw new Error(json.message ?? "ギフト付与に失敗しました。");
+      }
+      await fetchMemberGifts(detailUser.userId);
+    } catch (error) {
+      setGiftError(error instanceof Error ? error.message : "ギフト付与に失敗しました。");
+    } finally {
+      setIsGiftMutating(false);
+    }
+  };
+
+  const handleMarkGiftUsed = async (userGiftId: string) => {
+    if (!detailUser || isGiftMutating) return;
+    if (!window.confirm("このギフトを使用済みにしますか？")) return;
+    setIsGiftMutating(true);
+    setGiftError(null);
+    try {
+      const response = await fetch(
+        `/api/admin/members/${encodeURIComponent(detailUser.userId)}/gifts/${encodeURIComponent(userGiftId)}`,
+        { method: "PATCH" },
+      );
+      const json = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !json.ok) {
+        throw new Error(json.message ?? "使用済み更新に失敗しました。");
+      }
+      await fetchMemberGifts(detailUser.userId);
+    } catch (error) {
+      setGiftError(error instanceof Error ? error.message : "使用済み更新に失敗しました。");
+    } finally {
+      setIsGiftMutating(false);
+    }
+  };
 
   const openStaffDialog = (member: MemberRow) => {
     setDialogUser(member);
@@ -114,11 +254,12 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
         />
       </div>
       <section className="mx-auto w-[90%] overflow-hidden rounded-xl border border-[#dbe2ea] bg-white shadow-sm">
-        <div className="grid grid-cols-[1fr_auto_auto_auto] border-b border-[#e2e8f0] bg-[#f8fafc] px-4 py-3 text-sm font-bold text-[#334155]">
+        <div className="grid grid-cols-[1fr_auto_auto_auto_auto] border-b border-[#e2e8f0] bg-[#f8fafc] px-4 py-3 text-sm font-bold text-[#334155]">
           <p>会員名</p>
           <p className="px-2">ランク</p>
           <p className="px-2">来店数</p>
           <p className="px-2">スタッフ設定</p>
+          <p className="px-2 text-center">詳細</p>
         </div>
         <div className="max-h-[70vh] overflow-y-auto">
           {filteredMembers.length === 0 ? (
@@ -129,7 +270,7 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
             filteredMembers.map((row) => (
               <div
                 key={row.userId}
-                className="grid grid-cols-[1fr_auto_auto_auto] items-center border-b border-[#f1f5f9] px-4 py-3 text-sm text-[#0f172a] last:border-b-0"
+                className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center border-b border-[#f1f5f9] px-4 py-3 text-sm text-[#0f172a] last:border-b-0"
               >
                 <div className="min-w-0">
                   <p className="truncate">{row.displayName}</p>
@@ -159,11 +300,161 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                     </button>
                   ) : null}
                 </div>
+                <div className="flex justify-center px-2">
+                  <button
+                    type="button"
+                    onClick={() => openDetailModal(row)}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#cbd5e1] bg-white text-[#334155] hover:bg-[#f8fafc]"
+                    aria-label={`${row.displayName}の詳細を表示`}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-4 w-4"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="m9 18 6-6-6-6" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             ))
           )}
         </div>
       </section>
+      {detailUser ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+          <section className="w-full max-w-md rounded-xl bg-white p-5 shadow-lg">
+            <h2 className="text-base font-bold text-[#0f172a]">会員詳細</h2>
+            <p className="mt-1 text-sm text-[#64748b]">{detailUser.displayName}</p>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div className="flex items-start justify-between gap-3 border-b border-[#f1f5f9] pb-2">
+                <dt className="text-[#64748b]">userId</dt>
+                <dd className="break-all text-right font-semibold text-[#0f172a]">{detailUser.userId}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-b border-[#f1f5f9] pb-2">
+                <dt className="text-[#64748b]">ロール</dt>
+                <dd className="font-semibold text-[#0f172a]">{detailUser.role ?? "通常"}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-b border-[#f1f5f9] pb-2">
+                <dt className="text-[#64748b]">ランク</dt>
+                <dd className="font-semibold text-[#0f172a]">{detailUser.rankName}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-b border-[#f1f5f9] pb-2">
+                <dt className="text-[#64748b]">来店回数</dt>
+                <dd className="font-semibold text-[#0f172a]">{detailUser.checkInCount}回</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-b border-[#f1f5f9] pb-2">
+                <dt className="text-[#64748b]">登録日時</dt>
+                <dd className="font-semibold text-[#0f172a]">{formatDateTime(detailUser.registeredAt)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 border-b border-[#f1f5f9] pb-2">
+                <dt className="text-[#64748b]">最終来店日時</dt>
+                <dd className="font-semibold text-[#0f172a]">{formatDateTime(detailUser.lastVisitedAt)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-[#64748b]">担当公式アカウント</dt>
+                <dd className="text-right font-semibold text-[#0f172a]">
+                  {resolveOfficialAccountLabel(detailUser.assignedOfficialAccountId)}
+                </dd>
+              </div>
+            </dl>
+            <div className="mt-5 border-t border-[#e2e8f0] pt-4">
+              <h3 className="text-sm font-bold text-[#0f172a]">ギフト管理</h3>
+              <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] p-3">
+                <p className="text-xs font-semibold text-[#475569]">ギフトを追加</p>
+                <div className="mt-2 flex gap-2">
+                  <select
+                    value={selectedGiftId}
+                    onChange={(event) => setSelectedGiftId(event.target.value)}
+                    disabled={isGiftLoading || isGiftMutating || availableGifts.length === 0}
+                    className="min-w-0 flex-1 rounded border border-[#cbd5e1] bg-white px-3 py-2 text-sm"
+                  >
+                    {availableGifts.length === 0 ? (
+                      <option value="">登録済みギフトがありません</option>
+                    ) : (
+                      availableGifts.map((gift) => (
+                        <option key={gift.id} value={gift.id}>
+                          {gift.title}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void handleIssueGift()}
+                    disabled={isGiftLoading || isGiftMutating || !selectedGiftId}
+                    className="rounded bg-[#0f766e] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    付与
+                  </button>
+                </div>
+              </div>
+              {giftError ? (
+                <p className="mt-2 text-xs font-semibold text-[#b91c1c]">{giftError}</p>
+              ) : null}
+              <div className="mt-4">
+                <p className="text-xs font-bold text-[#0f172a]">未使用ギフト（{unusedGifts.length}件）</p>
+                {isGiftLoading ? (
+                  <p className="mt-2 text-xs text-[#64748b]">読み込み中...</p>
+                ) : unusedGifts.length === 0 ? (
+                  <p className="mt-2 text-xs text-[#94a3b8]">未使用ギフトはありません。</p>
+                ) : (
+                  <div className="mt-2 max-h-44 space-y-2 overflow-y-auto">
+                    {unusedGifts.map((gift) => (
+                      <div key={gift.userGiftId} className="rounded border border-[#e2e8f0] bg-white px-3 py-2">
+                        <p className="text-sm font-semibold text-[#0f172a]">{gift.title}</p>
+                        <p className="mt-1 text-xs text-[#64748b]">
+                          付与: {formatDateTime(gift.issuedAt)} / 期限: {formatDateTime(gift.expiresAt)}
+                        </p>
+                        <div className="mt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => void handleMarkGiftUsed(gift.userGiftId)}
+                            disabled={isGiftMutating}
+                            className="rounded border border-[#86efac] px-2 py-1 text-xs font-semibold text-[#166534] disabled:opacity-50"
+                          >
+                            使用済みにする
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="mt-4">
+                <p className="text-xs font-bold text-[#0f172a]">使用済みギフト（{usedGifts.length}件）</p>
+                {isGiftLoading ? null : usedGifts.length === 0 ? (
+                  <p className="mt-2 text-xs text-[#94a3b8]">使用済みギフトはありません。</p>
+                ) : (
+                  <div className="mt-2 max-h-44 space-y-2 overflow-y-auto">
+                    {usedGifts.map((gift) => (
+                      <div key={gift.userGiftId} className="rounded border border-[#e2e8f0] bg-white px-3 py-2">
+                        <p className="text-sm font-semibold text-[#0f172a]">{gift.title}</p>
+                        <p className="mt-1 text-xs text-[#64748b]">
+                          使用: {formatDateTime(gift.usedAt)} / 期限: {formatDateTime(gift.expiresAt)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={closeDetailModal}
+                className="rounded border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-semibold text-[#334155]"
+              >
+                閉じる
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {dialogUser ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
           <section className="w-full max-w-md rounded-xl bg-white p-4 shadow-lg">
