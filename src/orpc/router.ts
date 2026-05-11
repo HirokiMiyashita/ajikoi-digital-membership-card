@@ -86,6 +86,10 @@ function isCheckedInToday(lastCheckInAt: Date | null) {
   return lastCheckInAt >= getStartOfTodayInJstUtc();
 }
 
+function isCreatedTodayInJst(createdAt: Date, startOfTodayInJstUtc: Date) {
+  return createdAt >= startOfTodayInJstUtc;
+}
+
 async function resolveOfficialAccountId() {
   const now = Date.now();
   if (officialAccountCache && officialAccountCache.expiresAt > now) {
@@ -2125,6 +2129,7 @@ export const appRouter = {
             userId: true,
             officialAccountId: true,
             lastCheckInAt: true,
+            createdAt: true,
           },
         });
         if (!user) {
@@ -2152,13 +2157,8 @@ export const appRouter = {
           };
         }
 
-        const checkInCountRows = await prisma.$queryRaw<Array<{ count: number }>>`
-          SELECT COUNT(*)::int AS "count"
-          FROM "user_checkins"
-          WHERE "userId" = ${user.userId}
-        `;
-        const isFirstVisit = (checkInCountRows[0]?.count ?? 0) <= 1;
-        if (isFirstVisit) {
+        const startOfTodayInJstUtc = getStartOfTodayInJstUtc();
+        if (isCreatedTodayInJst(user.createdAt, startOfTodayInJstUtc)) {
           return {
             ok: true,
             executed: false,
@@ -2265,6 +2265,12 @@ export const appRouter = {
         const updatedUser = await prisma.user.findUnique({
           where: {
             userId: input.userId,
+          },
+          select: {
+            userId: true,
+            points: true,
+            nextRank: true,
+            createdAt: true,
           },
         });
 
@@ -2387,7 +2393,7 @@ export const appRouter = {
           }
         }
 
-        const gacha = isFirstVisit
+        const gacha = isCreatedTodayInJst(updatedUser.createdAt, startOfTodayInJstUtc)
           ? {
               eligible: false,
               winProbability: 0,
