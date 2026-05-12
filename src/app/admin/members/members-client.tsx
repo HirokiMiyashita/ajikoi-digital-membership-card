@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 type OfficialAccountOption = {
   id: string;
@@ -38,6 +38,7 @@ type MemberGiftRow = {
 };
 
 export default function MembersClient({ initialMembers, officialAccounts }: MembersClientProps) {
+  const swipeActionWidth = 116;
   const [members, setMembers] = useState(initialMembers);
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,8 +51,12 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
   const [isGiftLoading, setIsGiftLoading] = useState(false);
   const [isGiftMutating, setIsGiftMutating] = useState(false);
   const [giftError, setGiftError] = useState<string | null>(null);
+  const [swipedGiftId, setSwipedGiftId] = useState<string | null>(null);
+  const [draggingGiftId, setDraggingGiftId] = useState<string | null>(null);
+  const [dragOffsetX, setDragOffsetX] = useState(0);
   const [dialogRole, setDialogRole] = useState<"staff" | null>(null);
   const [dialogOfficialAccountId, setDialogOfficialAccountId] = useState<string>("");
+  const touchStartXRef = useRef<number | null>(null);
 
   const formatDateTime = (value: string | null) => {
     if (!value) {
@@ -161,6 +166,7 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
       if (!response.ok || !json.ok) {
         throw new Error(json.message ?? "使用済み更新に失敗しました。");
       }
+      setSwipedGiftId((prev) => (prev === userGiftId ? null : prev));
       await fetchMemberGifts(detailUser.userId);
     } catch (error) {
       setGiftError(error instanceof Error ? error.message : "使用済み更新に失敗しました。");
@@ -236,6 +242,35 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
     } finally {
       setUpdatingUserId(null);
     }
+  };
+
+  const handleGiftTouchStart = (giftId: string, clientX: number) => {
+    if (isGiftMutating) return;
+    touchStartXRef.current = clientX;
+    setDraggingGiftId(giftId);
+    setDragOffsetX(0);
+    if (swipedGiftId && swipedGiftId !== giftId) {
+      setSwipedGiftId(null);
+    }
+  };
+
+  const handleGiftTouchMove = (giftId: string, clientX: number) => {
+    if (draggingGiftId !== giftId) return;
+    const startX = touchStartXRef.current;
+    if (startX === null) return;
+    const delta = clientX - startX;
+    setDragOffsetX(delta);
+  };
+
+  const handleGiftTouchEnd = (giftId: string) => {
+    if (draggingGiftId !== giftId) return;
+    const baseOffset = swipedGiftId === giftId ? -swipeActionWidth : 0;
+    const clamped = Math.max(-swipeActionWidth, Math.min(0, baseOffset + dragOffsetX));
+    const shouldOpen = clamped <= -swipeActionWidth * 0.5;
+    setSwipedGiftId(shouldOpen ? giftId : null);
+    setDraggingGiftId(null);
+    setDragOffsetX(0);
+    touchStartXRef.current = null;
   };
 
   return (
@@ -400,6 +435,7 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
               ) : null}
               <div className="mt-4">
                 <p className="text-xs font-bold text-[#0f172a]">未使用ギフト（{unusedGifts.length}件）</p>
+                <p className="mt-1 text-[11px] text-[#64748b] sm:hidden">左にスワイプすると使用済みにできます。</p>
                 {isGiftLoading ? (
                   <p className="mt-2 text-xs text-[#64748b]">読み込み中...</p>
                 ) : unusedGifts.length === 0 ? (
@@ -407,20 +443,55 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                 ) : (
                   <div className="mt-2 space-y-2">
                     {unusedGifts.map((gift) => (
-                      <div key={gift.userGiftId} className="rounded border border-[#e2e8f0] bg-white px-3 py-2">
-                        <p className="text-sm font-semibold text-[#0f172a]">{gift.title}</p>
-                        <p className="mt-1 text-xs text-[#64748b]">
-                          付与: {formatDateTime(gift.issuedAt)} / 期限: {formatDateTime(gift.expiresAt)}
-                        </p>
-                        <div className="mt-2 flex justify-end">
+                      <div key={gift.userGiftId} className="relative overflow-hidden rounded border border-[#e2e8f0]">
+                        <div className="absolute inset-y-0 right-0 flex w-[116px] items-center justify-center bg-[#dcfce7] sm:hidden">
                           <button
                             type="button"
                             onClick={() => void handleMarkGiftUsed(gift.userGiftId)}
                             disabled={isGiftMutating}
-                            className="touch-manipulation rounded border border-[#86efac] px-2 py-1 text-xs font-semibold text-[#166534] disabled:opacity-50"
+                            className="touch-manipulation rounded bg-[#16a34a] px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
                           >
-                            使用済みにする
+                            使用済み
                           </button>
+                        </div>
+                        <div
+                          className={`relative bg-white px-3 py-2 transition-transform duration-200 ease-out [touch-action:pan-y] ${
+                            draggingGiftId === gift.userGiftId ? "duration-0" : ""
+                          }`}
+                          style={{
+                            transform: `translateX(${
+                              draggingGiftId === gift.userGiftId
+                                ? Math.max(
+                                    -swipeActionWidth,
+                                    Math.min(
+                                      0,
+                                      (swipedGiftId === gift.userGiftId ? -swipeActionWidth : 0) + dragOffsetX,
+                                    ),
+                                  )
+                                : swipedGiftId === gift.userGiftId
+                                  ? -swipeActionWidth
+                                  : 0
+                            }px)`,
+                          }}
+                          onTouchStart={(event) => handleGiftTouchStart(gift.userGiftId, event.touches[0]?.clientX ?? 0)}
+                          onTouchMove={(event) => handleGiftTouchMove(gift.userGiftId, event.touches[0]?.clientX ?? 0)}
+                          onTouchEnd={() => handleGiftTouchEnd(gift.userGiftId)}
+                          onTouchCancel={() => handleGiftTouchEnd(gift.userGiftId)}
+                        >
+                          <p className="text-sm font-semibold text-[#0f172a]">{gift.title}</p>
+                          <p className="mt-1 text-xs text-[#64748b]">
+                            付与: {formatDateTime(gift.issuedAt)} / 期限: {formatDateTime(gift.expiresAt)}
+                          </p>
+                          <div className="mt-2 hidden justify-end sm:flex">
+                            <button
+                              type="button"
+                              onClick={() => void handleMarkGiftUsed(gift.userGiftId)}
+                              disabled={isGiftMutating}
+                              className="touch-manipulation rounded border border-[#86efac] px-2 py-1 text-xs font-semibold text-[#166534] disabled:opacity-50"
+                            >
+                              使用済みにする
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
