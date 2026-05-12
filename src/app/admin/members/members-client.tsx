@@ -51,6 +51,7 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
   const [isGiftLoading, setIsGiftLoading] = useState(false);
   const [isGiftMutating, setIsGiftMutating] = useState(false);
   const [giftError, setGiftError] = useState<string | null>(null);
+  const [confirmTargetGift, setConfirmTargetGift] = useState<MemberGiftRow | null>(null);
   const [swipedGiftId, setSwipedGiftId] = useState<string | null>(null);
   const [draggingGiftId, setDraggingGiftId] = useState<string | null>(null);
   const [dragOffsetX, setDragOffsetX] = useState(0);
@@ -172,6 +173,22 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
     } finally {
       setIsGiftMutating(false);
     }
+  };
+
+  const requestMarkGiftUsed = (gift: MemberGiftRow) => {
+    if (isGiftMutating) return;
+    setConfirmTargetGift(gift);
+  };
+
+  const closeMarkUsedConfirm = () => {
+    if (isGiftMutating) return;
+    setConfirmTargetGift(null);
+  };
+
+  const confirmMarkGiftUsed = async () => {
+    if (!confirmTargetGift) return;
+    await handleMarkGiftUsed(confirmTargetGift.userGiftId);
+    setConfirmTargetGift(null);
   };
 
   const openStaffDialog = (member: MemberRow) => {
@@ -448,7 +465,7 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                         <div key={gift.userGiftId} className="relative overflow-hidden rounded border border-[#e2e8f0]">
                           <button
                             type="button"
-                            onClick={() => void handleMarkGiftUsed(gift.userGiftId)}
+                            onClick={() => requestMarkGiftUsed(gift)}
                             disabled={isGiftMutating}
                             className={`absolute inset-y-0 right-0 z-20 w-[116px] bg-[#16a34a] text-xs font-semibold text-white transition-opacity sm:hidden ${
                               isOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
@@ -487,7 +504,7 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                           <div className="mt-2 hidden justify-end sm:flex">
                             <button
                               type="button"
-                              onClick={() => void handleMarkGiftUsed(gift.userGiftId)}
+                              onClick={() => requestMarkGiftUsed(gift)}
                               disabled={isGiftMutating}
                               className="touch-manipulation rounded border border-[#86efac] px-2 py-1 text-xs font-semibold text-[#166534] disabled:opacity-50"
                             >
@@ -526,6 +543,35 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                 className="rounded border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-semibold text-[#334155]"
               >
                 閉じる
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {confirmTargetGift ? (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 px-4">
+          <section className="w-full max-w-sm rounded-xl bg-white p-4 shadow-lg">
+            <h3 className="text-base font-bold text-[#0f172a]">使用済みにしますか？</h3>
+            <p className="mt-2 text-sm text-[#334155]">
+              「{confirmTargetGift.title}」を使用済みに変更します。
+            </p>
+            <p className="mt-1 text-xs text-[#64748b]">この操作は管理画面上で元に戻せません。</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeMarkUsedConfirm}
+                disabled={isGiftMutating}
+                className="rounded border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-semibold text-[#334155] disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmMarkGiftUsed()}
+                disabled={isGiftMutating}
+                className="rounded bg-[#16a34a] px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {isGiftMutating ? "更新中..." : "使用済みにする"}
               </button>
             </div>
           </section>
