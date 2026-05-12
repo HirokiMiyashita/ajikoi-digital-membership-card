@@ -442,25 +442,28 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                   <p className="mt-2 text-xs text-[#94a3b8]">未使用ギフトはありません。</p>
                 ) : (
                   <div className="mt-2 space-y-2">
-                    {unusedGifts.map((gift) => (
-                      <div key={gift.userGiftId} className="relative overflow-hidden rounded border border-[#e2e8f0]">
-                        <div className="absolute inset-y-0 right-0 flex w-[116px] items-center justify-center bg-[#dcfce7] sm:hidden">
+                    {unusedGifts.map((gift) => {
+                      const isDragging = draggingGiftId === gift.userGiftId;
+                      const isOpen = swipedGiftId === gift.userGiftId && !isDragging;
+                      return (
+                        <div key={gift.userGiftId} className="relative overflow-hidden rounded border border-[#e2e8f0]">
                           <button
                             type="button"
                             onClick={() => void handleMarkGiftUsed(gift.userGiftId)}
                             disabled={isGiftMutating}
-                            className="touch-manipulation rounded bg-[#16a34a] px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                            className={`absolute inset-y-0 right-0 z-20 w-[116px] bg-[#16a34a] text-xs font-semibold text-white transition-opacity sm:hidden ${
+                              isOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+                            }`}
                           >
-                            使用済み
+                            使用済みにする
                           </button>
-                        </div>
                         <div
                           className={`relative bg-white px-3 py-2 transition-transform duration-200 ease-out [touch-action:pan-y] ${
-                            draggingGiftId === gift.userGiftId ? "duration-0" : ""
+                            isDragging ? "duration-0" : ""
                           }`}
                           style={{
                             transform: `translateX(${
-                              draggingGiftId === gift.userGiftId
+                              isDragging
                                 ? Math.max(
                                     -swipeActionWidth,
                                     Math.min(
@@ -493,8 +496,9 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                             </button>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
