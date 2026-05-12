@@ -405,7 +405,7 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                 ) : unusedGifts.length === 0 ? (
                   <p className="mt-2 text-xs text-[#94a3b8]">未使用ギフトはありません。</p>
                 ) : (
-                  <div className="mt-2 max-h-44 space-y-2 overflow-y-auto">
+                  <div className="mt-2 space-y-2">
                     {unusedGifts.map((gift) => (
                       <div key={gift.userGiftId} className="rounded border border-[#e2e8f0] bg-white px-3 py-2">
                         <p className="text-sm font-semibold text-[#0f172a]">{gift.title}</p>
@@ -417,7 +417,7 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                             type="button"
                             onClick={() => void handleMarkGiftUsed(gift.userGiftId)}
                             disabled={isGiftMutating}
-                            className="rounded border border-[#86efac] px-2 py-1 text-xs font-semibold text-[#166534] disabled:opacity-50"
+                            className="touch-manipulation rounded border border-[#86efac] px-2 py-1 text-xs font-semibold text-[#166534] disabled:opacity-50"
                           >
                             使用済みにする
                           </button>
@@ -432,7 +432,7 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                 {isGiftLoading ? null : usedGifts.length === 0 ? (
                   <p className="mt-2 text-xs text-[#94a3b8]">使用済みギフトはありません。</p>
                 ) : (
-                  <div className="mt-2 max-h-44 space-y-2 overflow-y-auto">
+                  <div className="mt-2 space-y-2">
                     {usedGifts.map((gift) => (
                       <div key={gift.userGiftId} className="rounded border border-[#e2e8f0] bg-white px-3 py-2">
                         <p className="text-sm font-semibold text-[#0f172a]">{gift.title}</p>
