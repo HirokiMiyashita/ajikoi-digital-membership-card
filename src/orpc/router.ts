@@ -18,6 +18,9 @@ const prismaUnsafe = prisma as unknown as {
     findMany: (args: unknown) => Promise<unknown[]>;
     createMany: (args: unknown) => Promise<unknown>;
   };
+  visitGachaSetting: {
+    findUnique: (args: unknown) => Promise<unknown>;
+  };
 };
 
 const OFFICIAL_ACCOUNT_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -599,6 +602,7 @@ type VisitGachaResult = {
   won: boolean;
   winProbability: number;
   giftTitle: string | null;
+  resultImageUrl: string | null;
   previewGift: {
     title: string;
     usageGuide: string;
@@ -618,6 +622,8 @@ type VisitGachaPreview = {
 };
 type VisitGachaContext = {
   winProbability: number;
+  winImageUrl: string | null;
+  loseImageUrl: string | null;
   gift: {
     id: string;
     title: string;
@@ -669,10 +675,12 @@ function toVisitGachaPreviewGift(gift: {
 
 async function resolveVisitGachaContext(userId: string, officialAccountId: string | null): Promise<VisitGachaContext | null> {
   const scopeKey = officialAccountId ?? "global";
-  const setting = await prisma.visitGachaSetting.findUnique({
+  const setting = (await prismaUnsafe.visitGachaSetting.findUnique({
     where: { scopeKey },
     select: {
       winProbability: true,
+      winImageUrl: true,
+      loseImageUrl: true,
       isActive: true,
       rankProbabilities: {
         select: {
@@ -692,7 +700,22 @@ async function resolveVisitGachaContext(userId: string, officialAccountId: strin
         },
       },
     },
-  });
+  })) as {
+    winProbability: number;
+    winImageUrl: string | null;
+    loseImageUrl: string | null;
+    isActive: boolean;
+    rankProbabilities: Array<{ rankId: string; winProbability: number }>;
+    gift: {
+      id: string;
+      title: string;
+      usageGuide: string;
+      imageUrl: string;
+      expiryType: GiftExpiryTypeValue;
+      expiryDays: number | null;
+      expiryAt: Date | null;
+    } | null;
+  } | null;
   if (!setting || !setting.isActive || !setting.gift) {
     return null;
   }
@@ -709,6 +732,8 @@ async function resolveVisitGachaContext(userId: string, officialAccountId: strin
   const winProbability = Math.max(0, Math.min(100, rankProbability?.winProbability ?? setting.winProbability));
   return {
     winProbability,
+    winImageUrl: setting.winImageUrl,
+    loseImageUrl: setting.loseImageUrl,
     gift: setting.gift,
   };
 }
@@ -737,11 +762,13 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
       won: false,
       winProbability: 0,
       giftTitle: null,
+      resultImageUrl: null,
       previewGift: null,
     };
   }
   const winProbability = context.winProbability;
   const won = Math.random() * 100 < winProbability;
+  const resultImageUrl = won ? context.winImageUrl : context.loseImageUrl;
   const previewGift = toVisitGachaPreviewGift(context.gift);
 
   if (!won) {
@@ -750,6 +777,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
       won: false,
       winProbability,
       giftTitle: null,
+      resultImageUrl,
       previewGift,
     };
   }
@@ -763,6 +791,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
       won: false,
       winProbability,
       giftTitle: null,
+      resultImageUrl,
       previewGift,
     };
   }
@@ -780,6 +809,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
     won: true,
     winProbability,
     giftTitle: gift.title,
+    resultImageUrl,
     previewGift,
   };
 }
@@ -2154,6 +2184,7 @@ export const appRouter = {
             won: false,
             winProbability: 0,
             giftTitle: null as string | null,
+            resultImageUrl: null as string | null,
           };
         }
 
@@ -2166,6 +2197,7 @@ export const appRouter = {
             won: false,
             winProbability: 0,
             giftTitle: null as string | null,
+            resultImageUrl: null as string | null,
           };
         }
 
@@ -2179,6 +2211,7 @@ export const appRouter = {
             won: false,
             winProbability: gacha.winProbability,
             giftTitle: null as string | null,
+            resultImageUrl: null as string | null,
           };
         }
 
@@ -2208,6 +2241,7 @@ export const appRouter = {
           won: gacha.won,
           winProbability: gacha.winProbability,
           giftTitle: gacha.giftTitle,
+          resultImageUrl: gacha.resultImageUrl,
         };
       }),
     addVisitPoint: os

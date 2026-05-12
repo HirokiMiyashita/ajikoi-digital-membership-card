@@ -15,6 +15,7 @@ type GachaPopupState = {
   open: boolean;
   won: boolean;
   giftTitle: string | null;
+  resultImageUrl: string | null;
 };
 type GachaStartPopupState = {
   open: boolean;
@@ -163,6 +164,7 @@ export default function Home() {
     open: false,
     won: false,
     giftTitle: null,
+    resultImageUrl: null,
   });
   const [gachaStartPopup, setGachaStartPopup] = useState<GachaStartPopupState>({
     open: false,
@@ -380,7 +382,7 @@ export default function Home() {
       setIsAutoCheckinProcessing(true);
       setScanMessage("来店ポイントを付与しています...");
       setGachaStartPopup({ open: false, winProbability: 0, previewGift: null });
-      setGachaPopup({ open: false, won: false, giftTitle: null });
+      setGachaPopup({ open: false, won: false, giftTitle: null, resultImageUrl: null });
       try {
         setGachaJudgingLabel("ポイント付与中...");
         setIsGachaJudging(true);
@@ -538,6 +540,7 @@ export default function Home() {
         open: true,
         won: result.won,
         giftTitle: result.giftTitle ?? null,
+        resultImageUrl: result.resultImageUrl ?? null,
       });
       if (result.giftTitle) {
         await fetchOwnedGifts(profile.userId);
@@ -930,6 +933,13 @@ export default function Home() {
         <div className="fixed inset-0 z-56 flex items-center justify-center bg-black/35 px-6">
           <section className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
             <p className="text-sm font-semibold text-[#64748b]">来店ガチャ結果</p>
+            {gachaPopup.resultImageUrl ? (
+              <img
+                src={gachaPopup.resultImageUrl}
+                alt={gachaPopup.won ? "あたり画像" : "ハズレ画像"}
+                className="mt-3 h-52 w-full rounded-lg object-cover"
+              />
+            ) : null}
             <p className={`mt-3 text-2xl font-bold ${gachaPopup.won ? "text-[#0f766e]" : "text-[#334155]"}`}>
               {gachaPopup.won ? "あたり！" : "ハズレ"}
             </p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 
 type GiftOption = {
   id: string;
@@ -14,6 +14,8 @@ type RankOption = {
 
 type InitialSetting = {
   giftId: string;
+  winImageUrl: string | null;
+  loseImageUrl: string | null;
   winProbability: number;
   isActive: boolean;
   rankProbabilities: Array<{
@@ -30,6 +32,8 @@ type Props = {
 
 export default function VisitGachaClient({ gifts, ranks, initialSetting }: Props) {
   const [giftId, setGiftId] = useState(initialSetting?.giftId ?? "");
+  const [winImageUrl, setWinImageUrl] = useState(initialSetting?.winImageUrl ?? "");
+  const [loseImageUrl, setLoseImageUrl] = useState(initialSetting?.loseImageUrl ?? "");
   const [winProbability, setWinProbability] = useState(String(initialSetting?.winProbability ?? 20));
   const [rankWinProbabilities, setRankWinProbabilities] = useState<Record<string, string>>(() => {
     const entries = initialSetting?.rankProbabilities.map((row) => [row.rankId, String(row.winProbability)]) ?? [];
@@ -37,6 +41,8 @@ export default function VisitGachaClient({ gifts, ranks, initialSetting }: Props
   });
   const [isActive, setIsActive] = useState(initialSetting?.isActive ?? true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingWinImage, setIsUploadingWinImage] = useState(false);
+  const [isUploadingLoseImage, setIsUploadingLoseImage] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
 
@@ -61,6 +67,56 @@ export default function VisitGachaClient({ gifts, ranks, initialSetting }: Props
     });
   }, [giftId, rankWinProbabilities, ranks, winProbability]);
 
+  const handleResultImageUpload = async (
+    event: ChangeEvent<HTMLInputElement>,
+    type: "win" | "lose",
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setMessage(null);
+    setIsError(false);
+    if (type === "win") {
+      setIsUploadingWinImage(true);
+    } else {
+      setIsUploadingLoseImage(true);
+    }
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch("/api/admin/gifts/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const json = (await response.json()) as {
+        ok: boolean;
+        imagePath?: string;
+        previewUrl?: string;
+        message?: string;
+      };
+      if (!response.ok || !json.ok || !json.imagePath) {
+        setIsError(true);
+        setMessage(json.message ?? "画像アップロードに失敗しました。");
+        return;
+      }
+      if (type === "win") {
+        setWinImageUrl(json.imagePath);
+      } else {
+        setLoseImageUrl(json.imagePath);
+      }
+      setMessage("ガチャ結果画像をアップロードしました。");
+    } catch {
+      setIsError(true);
+      setMessage("画像アップロード時に通信エラーが発生しました。");
+    } finally {
+      if (type === "win") {
+        setIsUploadingWinImage(false);
+      } else {
+        setIsUploadingLoseImage(false);
+      }
+      event.target.value = "";
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canSubmit || isSaving) return;
@@ -74,6 +130,8 @@ export default function VisitGachaClient({ gifts, ranks, initialSetting }: Props
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           giftId,
+          winImageUrl: winImageUrl.trim().length > 0 ? winImageUrl.trim() : null,
+          loseImageUrl: loseImageUrl.trim().length > 0 ? loseImageUrl.trim() : null,
           winProbability: Number(winProbability),
           rankWinProbabilities: ranks
             .map((rank) => {
@@ -147,6 +205,56 @@ export default function VisitGachaClient({ gifts, ranks, initialSetting }: Props
             </p>
           </label>
 
+          <div className="space-y-3">
+            <p className="text-sm font-semibold text-[#334155]">結果画像</p>
+            <label className="block">
+              <span className="mb-1 block text-sm text-[#334155]">当たり画像URL（任意）</span>
+              <input
+                type="url"
+                value={winImageUrl}
+                onChange={(event) => setWinImageUrl(event.target.value)}
+                placeholder="https://..."
+                className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
+              />
+              <label className="mt-2 inline-flex cursor-pointer items-center rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-semibold text-[#334155]">
+                {isUploadingWinImage ? "アップロード中..." : "画像をアップロード"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={(event) => void handleResultImageUpload(event, "win")}
+                  className="hidden"
+                  disabled={isUploadingWinImage || isSaving}
+                />
+              </label>
+              {winImageUrl ? (
+                <img src={winImageUrl} alt="当たり画像プレビュー" className="mt-2 h-24 rounded-lg border border-[#e2e8f0] object-cover" />
+              ) : null}
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm text-[#334155]">ハズレ画像URL（任意）</span>
+              <input
+                type="url"
+                value={loseImageUrl}
+                onChange={(event) => setLoseImageUrl(event.target.value)}
+                placeholder="https://..."
+                className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
+              />
+              <label className="mt-2 inline-flex cursor-pointer items-center rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-xs font-semibold text-[#334155]">
+                {isUploadingLoseImage ? "アップロード中..." : "画像をアップロード"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  onChange={(event) => void handleResultImageUpload(event, "lose")}
+                  className="hidden"
+                  disabled={isUploadingLoseImage || isSaving}
+                />
+              </label>
+              {loseImageUrl ? (
+                <img src={loseImageUrl} alt="ハズレ画像プレビュー" className="mt-2 h-24 rounded-lg border border-[#e2e8f0] object-cover" />
+              ) : null}
+            </label>
+          </div>
+
           <div className="space-y-2">
             <p className="text-sm font-semibold text-[#334155]">ランク別当選率 (%)</p>
             <p className="text-xs text-[#64748b]">
@@ -187,7 +295,7 @@ export default function VisitGachaClient({ gifts, ranks, initialSetting }: Props
             </label>
             <button
               type="submit"
-              disabled={!canSubmit || isSaving || gifts.length === 0}
+              disabled={!canSubmit || isSaving || isUploadingWinImage || isUploadingLoseImage || gifts.length === 0}
               className="ml-auto rounded-lg bg-[#0f766e] px-4 py-2 font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
             >
               {isSaving ? "保存中..." : "設定を保存"}

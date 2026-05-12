@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 
 const visitGachaPayloadSchema = z.object({
   giftId: z.string().trim().min(1, "当選ギフトを選択してください。"),
+  winImageUrl: z.string().trim().url("当たり画像URLの形式が不正です。").nullable().optional(),
+  loseImageUrl: z.string().trim().url("ハズレ画像URLの形式が不正です。").nullable().optional(),
   winProbability: z
     .coerce
     .number()
@@ -64,7 +66,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { giftId, winProbability, rankWinProbabilities, isActive } = parsed.data;
+    const { giftId, winImageUrl, loseImageUrl, winProbability, rankWinProbabilities, isActive } = parsed.data;
 
     const gift = await prisma.gift.findUnique({
       where: { id: giftId },
@@ -103,11 +105,15 @@ export async function POST(request: Request) {
           scopeKey,
           officialAccountId: adminUser.officialAccountId ?? null,
           giftId,
+          winImageUrl: winImageUrl ?? null,
+          loseImageUrl: loseImageUrl ?? null,
           winProbability,
           isActive,
         },
         update: {
           giftId,
+          winImageUrl: winImageUrl ?? null,
+          loseImageUrl: loseImageUrl ?? null,
           winProbability,
           isActive,
         },

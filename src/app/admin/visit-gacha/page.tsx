@@ -24,6 +24,8 @@ export default async function AdminVisitGachaPage() {
       where: { scopeKey },
       select: {
         giftId: true,
+        winImageUrl: true,
+        loseImageUrl: true,
         winProbability: true,
         isActive: true,
         rankProbabilities: {
@@ -44,6 +46,8 @@ export default async function AdminVisitGachaPage() {
         setting
           ? {
               giftId: setting.giftId,
+              winImageUrl: setting.winImageUrl,
+              loseImageUrl: setting.loseImageUrl,
               winProbability: setting.winProbability,
               isActive: setting.isActive,
               rankProbabilities: setting.rankProbabilities,

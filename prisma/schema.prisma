@@ -148,6 +148,8 @@ model VisitGachaSetting {
   scopeKey          String                      @unique
   officialAccountId String?
   giftId            String
+  winImageUrl       String?
+  loseImageUrl      String?
   winProbability    Int
   isActive          Boolean                     @default(true)
   createdAt         DateTime                    @default(now())
