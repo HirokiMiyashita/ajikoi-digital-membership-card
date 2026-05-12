@@ -154,7 +154,6 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
 
   const handleMarkGiftUsed = async (userGiftId: string) => {
     if (!detailUser || isGiftMutating) return;
-    if (!window.confirm("このギフトを使用済みにしますか？")) return;
     setIsGiftMutating(true);
     setGiftError(null);
     try {
