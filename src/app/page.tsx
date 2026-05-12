@@ -930,32 +930,35 @@ export default function Home() {
         </div>
       ) : null}
       {gachaPopup.open ? (
-        <div className="fixed inset-0 z-56 flex items-center justify-center bg-black/35 px-6">
-          <section className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
-            <p className="text-sm font-semibold text-[#64748b]">来店ガチャ結果</p>
+        <div className="fixed inset-0 z-56 flex items-center justify-center bg-black/45 px-4">
+          <div className="w-full max-w-md">
             {gachaPopup.resultImageUrl ? (
               <img
                 src={gachaPopup.resultImageUrl}
                 alt={gachaPopup.won ? "あたり画像" : "ハズレ画像"}
-                className="mt-3 h-52 w-full rounded-lg object-cover"
+                className="w-full rounded-xl object-contain shadow-xl"
               />
-            ) : null}
-            <p className={`mt-3 text-2xl font-bold ${gachaPopup.won ? "text-[#0f766e]" : "text-[#334155]"}`}>
-              {gachaPopup.won ? "あたり！" : "ハズレ"}
-            </p>
-            <p className="mt-3 text-sm text-[#334155]">
-              {gachaPopup.won
-                ? `「${gachaPopup.giftTitle ?? "ギフト"}」を獲得しました。`
-                : "また次回チャレンジしてください。"}
-            </p>
+            ) : (
+              <div className="rounded-xl bg-white px-6 py-8 text-center shadow-xl">
+                <p className={`text-2xl font-bold ${gachaPopup.won ? "text-[#0f766e]" : "text-[#334155]"}`}>
+                  {gachaPopup.won ? "あたり！" : "ハズレ"}
+                </p>
+                <p className="mt-3 text-sm text-[#334155]">
+                  {gachaPopup.won
+                    ? `「${gachaPopup.giftTitle ?? "ギフト"}」を獲得しました。`
+                    : "また次回チャレンジしてください。"}
+                </p>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleCloseGachaPopup}
-              className="mt-6 w-full rounded-lg bg-[#0f766e] px-4 py-3 text-sm font-bold text-white"
+              aria-label="閉じる"
+              className="mx-auto mt-4 flex h-11 w-11 items-center justify-center rounded-full bg-white text-2xl font-bold text-[#111827] shadow-lg"
             >
-              閉じる
+              ×
             </button>
-          </section>
+          </div>
         </div>
       ) : null}
       {gachaStartPopup.open ? (
