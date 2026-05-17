@@ -132,6 +132,11 @@ function formatDateLabel(dateString: string) {
   return `${y}/${m}/${d}`;
 }
 
+function extractBirthYear(value: string) {
+  const matched = value.match(/^(\d{4})/);
+  return matched?.[1] ?? "";
+}
+
 function Skeleton({ className }: { className: string }) {
   return <div className={`animate-pulse rounded bg-[#e5e7eb] ${className}`} aria-hidden="true" />;
 }
@@ -470,6 +475,8 @@ export default function Home() {
   const currentSurveyQuestion = surveySteps[activeSurveyStep] ?? null;
   const surveyProgress = `${Math.min(activeSurveyStep + 1, Math.max(surveySteps.length, 1))}/${Math.max(surveySteps.length, 1)}`;
   const surveyProgressPercent = (Math.min(activeSurveyStep + 1, Math.max(surveySteps.length, 1)) / Math.max(surveySteps.length, 1)) * 100;
+  const currentYear = new Date().getFullYear();
+  const birthYearOptions = Array.from({ length: currentYear - 1900 + 1 }, (_, index) => String(currentYear - index));
 
   const canProceedSurveyStep = (() => {
     if (!currentSurveyQuestion) return true;
@@ -1194,21 +1201,44 @@ export default function Home() {
                   : null}
 
                 {currentSurveyQuestion?.questionType === "date" ? (
-                  <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
-                    <span className="mb-2 block text-sm font-semibold text-[#64748b]">生年月日を選択</span>
-                    <input
-                      type="date"
-                      max={todayAsYmd()}
-                      value={surveyForm[currentSurveyQuestion.questionKey] ?? ""}
-                      onChange={(event) =>
-                        setSurveyForm((prev) => ({
-                          ...prev,
-                          [currentSurveyQuestion.questionKey]: event.target.value,
-                        }))
-                      }
-                      className="w-full bg-transparent text-2xl font-semibold outline-none"
-                    />
-                  </label>
+                  currentSurveyQuestion.presetKey === "birthDate" ? (
+                    <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
+                      <span className="mb-2 block text-sm font-semibold text-[#64748b]">生まれ年を選択</span>
+                      <select
+                        value={extractBirthYear(surveyForm[currentSurveyQuestion.questionKey] ?? "")}
+                        onChange={(event) =>
+                          setSurveyForm((prev) => ({
+                            ...prev,
+                            [currentSurveyQuestion.questionKey]: event.target.value ? `${event.target.value}-01-01` : "",
+                          }))
+                        }
+                        className="w-full bg-transparent text-2xl font-semibold outline-none"
+                      >
+                        <option value="">年を選択してください</option>
+                        {birthYearOptions.map((year) => (
+                          <option key={year} value={year}>
+                            {year}年
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
+                      <span className="mb-2 block text-sm font-semibold text-[#64748b]">日付を選択</span>
+                      <input
+                        type="date"
+                        max={todayAsYmd()}
+                        value={surveyForm[currentSurveyQuestion.questionKey] ?? ""}
+                        onChange={(event) =>
+                          setSurveyForm((prev) => ({
+                            ...prev,
+                            [currentSurveyQuestion.questionKey]: event.target.value,
+                          }))
+                        }
+                        className="w-full bg-transparent text-2xl font-semibold outline-none"
+                      />
+                    </label>
+                  )
                 ) : null}
 
                 {currentSurveyQuestion?.questionType === "text" ? (
