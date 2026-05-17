@@ -48,6 +48,11 @@ type SurveyQuestionConfig = {
   isRequired: boolean;
   sortOrder: number;
 };
+type BirthDateParts = {
+  year: string;
+  month: string;
+  day: string;
+};
 const defaultSurveyQuestions: SurveyQuestionConfig[] = [
   {
     id: "preset-gender",
@@ -134,11 +139,12 @@ function formatDateLabel(dateString: string) {
 
 function extractBirthDateParts(value: string) {
   const matched = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return {
+  const parts: BirthDateParts = {
     year: matched?.[1] ?? "",
     month: matched?.[2] ?? "",
     day: matched?.[3] ?? "",
   };
+  return parts;
 }
 
 function getDaysInMonth(year: string, month: string) {
@@ -210,6 +216,7 @@ export default function Home() {
   const [isSubmittingSurvey, setIsSubmittingSurvey] = useState(false);
   const [surveyError, setSurveyError] = useState<string | null>(null);
   const [surveyForm, setSurveyForm] = useState<Record<string, string>>({});
+  const [birthDateDraft, setBirthDateDraft] = useState<BirthDateParts>({ year: "", month: "", day: "" });
   const [hasGoogleReview, setHasGoogleReview] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [isReviewDoneModalOpen, setIsReviewDoneModalOpen] = useState(false);
@@ -504,14 +511,26 @@ export default function Home() {
   const currentYear = new Date().getFullYear();
   const birthYearOptions = Array.from({ length: currentYear - 1900 + 1 }, (_, index) => String(currentYear - index));
   const birthMonthOptions = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
-  const birthDateParts =
-    currentSurveyQuestion?.presetKey === "birthDate"
-      ? extractBirthDateParts(surveyForm[currentSurveyQuestion.questionKey] ?? "")
-      : { year: "", month: "", day: "" };
+  const birthDateParts = birthDateDraft;
   const birthDayOptions = Array.from(
     { length: getDaysInMonth(birthDateParts.year, birthDateParts.month) },
     (_, index) => String(index + 1).padStart(2, "0"),
   );
+
+  useEffect(() => {
+    if (!currentSurveyQuestion || currentSurveyQuestion.presetKey !== "birthDate") return;
+    const stored = surveyForm[currentSurveyQuestion.questionKey] ?? "";
+    if (!stored) return;
+    const parsed = extractBirthDateParts(stored);
+    if (!parsed.year || !parsed.month || !parsed.day) return;
+    if (
+      parsed.year !== birthDateDraft.year ||
+      parsed.month !== birthDateDraft.month ||
+      parsed.day !== birthDateDraft.day
+    ) {
+      setBirthDateDraft(parsed);
+    }
+  }, [birthDateDraft.day, birthDateDraft.month, birthDateDraft.year, currentSurveyQuestion, surveyForm]);
 
   const canProceedSurveyStep = (() => {
     if (!currentSurveyQuestion) return true;
@@ -1248,22 +1267,29 @@ export default function Home() {
                       <div className="grid grid-cols-3 gap-2">
                         <select
                           value={birthDateParts.year}
-                          onChange={(event) =>
-                            setSurveyForm((prev) => {
-                              const currentParts = extractBirthDateParts(prev[currentSurveyQuestion.questionKey] ?? "");
-                              const nextYear = event.target.value;
-                              const maxDay = getDaysInMonth(nextYear, currentParts.month);
-                              const currentDay = Number(currentParts.day);
-                              const nextDay =
-                                currentParts.day.length > 0
-                                  ? String(Math.min(Number.isNaN(currentDay) ? maxDay : currentDay, maxDay)).padStart(2, "0")
-                                  : "";
-                              return {
-                                ...prev,
-                                [currentSurveyQuestion.questionKey]: buildBirthDateFromParts(nextYear, currentParts.month, nextDay),
-                              };
-                            })
-                          }
+                          onChange={(event) => {
+                            const nextYear = event.target.value;
+                            const maxDay = getDaysInMonth(nextYear, birthDateParts.month);
+                            const currentDay = Number(birthDateParts.day);
+                            const nextDay =
+                              birthDateParts.day.length > 0
+                                ? String(Math.min(Number.isNaN(currentDay) ? maxDay : currentDay, maxDay)).padStart(2, "0")
+                                : "";
+                            const nextParts: BirthDateParts = {
+                              year: nextYear,
+                              month: birthDateParts.month,
+                              day: nextDay,
+                            };
+                            setBirthDateDraft(nextParts);
+                            setSurveyForm((prev) => ({
+                              ...prev,
+                              [currentSurveyQuestion.questionKey]: buildBirthDateFromParts(
+                                nextParts.year,
+                                nextParts.month,
+                                nextParts.day,
+                              ),
+                            }));
+                          }}
                           className="w-full rounded border border-[#d1d5db] bg-white px-2 py-3 text-base font-semibold outline-none"
                         >
                           <option value="">年</option>
@@ -1275,22 +1301,29 @@ export default function Home() {
                         </select>
                         <select
                           value={birthDateParts.month}
-                          onChange={(event) =>
-                            setSurveyForm((prev) => {
-                              const currentParts = extractBirthDateParts(prev[currentSurveyQuestion.questionKey] ?? "");
-                              const nextMonth = event.target.value;
-                              const maxDay = getDaysInMonth(currentParts.year, nextMonth);
-                              const currentDay = Number(currentParts.day);
-                              const nextDay =
-                                currentParts.day.length > 0
-                                  ? String(Math.min(Number.isNaN(currentDay) ? maxDay : currentDay, maxDay)).padStart(2, "0")
-                                  : "";
-                              return {
-                                ...prev,
-                                [currentSurveyQuestion.questionKey]: buildBirthDateFromParts(currentParts.year, nextMonth, nextDay),
-                              };
-                            })
-                          }
+                          onChange={(event) => {
+                            const nextMonth = event.target.value;
+                            const maxDay = getDaysInMonth(birthDateParts.year, nextMonth);
+                            const currentDay = Number(birthDateParts.day);
+                            const nextDay =
+                              birthDateParts.day.length > 0
+                                ? String(Math.min(Number.isNaN(currentDay) ? maxDay : currentDay, maxDay)).padStart(2, "0")
+                                : "";
+                            const nextParts: BirthDateParts = {
+                              year: birthDateParts.year,
+                              month: nextMonth,
+                              day: nextDay,
+                            };
+                            setBirthDateDraft(nextParts);
+                            setSurveyForm((prev) => ({
+                              ...prev,
+                              [currentSurveyQuestion.questionKey]: buildBirthDateFromParts(
+                                nextParts.year,
+                                nextParts.month,
+                                nextParts.day,
+                              ),
+                            }));
+                          }}
                           className="w-full rounded border border-[#d1d5db] bg-white px-2 py-3 text-base font-semibold outline-none"
                         >
                           <option value="">月</option>
@@ -1302,19 +1335,22 @@ export default function Home() {
                         </select>
                         <select
                           value={birthDateParts.day}
-                          onChange={(event) =>
-                            setSurveyForm((prev) => {
-                              const currentParts = extractBirthDateParts(prev[currentSurveyQuestion.questionKey] ?? "");
-                              return {
-                                ...prev,
-                                [currentSurveyQuestion.questionKey]: buildBirthDateFromParts(
-                                  currentParts.year,
-                                  currentParts.month,
-                                  event.target.value,
-                                ),
-                              };
-                            })
-                          }
+                          onChange={(event) => {
+                            const nextParts: BirthDateParts = {
+                              year: birthDateParts.year,
+                              month: birthDateParts.month,
+                              day: event.target.value,
+                            };
+                            setBirthDateDraft(nextParts);
+                            setSurveyForm((prev) => ({
+                              ...prev,
+                              [currentSurveyQuestion.questionKey]: buildBirthDateFromParts(
+                                nextParts.year,
+                                nextParts.month,
+                                nextParts.day,
+                              ),
+                            }));
+                          }}
                           className="w-full rounded border border-[#d1d5db] bg-white px-2 py-3 text-base font-semibold outline-none"
                         >
                           <option value="">日</option>
