@@ -137,6 +137,12 @@ function extractBirthYear(value: string) {
   return matched?.[1] ?? "";
 }
 
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function Skeleton({ className }: { className: string }) {
   return <div className={`animate-pulse rounded bg-[#e5e7eb] ${className}`} aria-hidden="true" />;
 }
@@ -528,6 +534,7 @@ export default function Home() {
 
   const handleStartGachaChallenge = async () => {
     if (!profile) return;
+    const judgingStartedAt = Date.now();
     setGachaStartPopup((prev) => ({ ...prev, open: false }));
     setGachaJudgingLabel("判定中...");
     setIsGachaJudging(true);
@@ -555,6 +562,11 @@ export default function Home() {
     } catch (error) {
       setScanMessage(error instanceof Error ? error.message : "ガチャの実行に失敗しました。");
     } finally {
+      const elapsedMs = Date.now() - judgingStartedAt;
+      const minJudgingMs = 3000;
+      if (elapsedMs < minJudgingMs) {
+        await wait(minJudgingMs - elapsedMs);
+      }
       setIsGachaJudging(false);
       setGachaJudgingLabel("ポイント付与中...");
     }
