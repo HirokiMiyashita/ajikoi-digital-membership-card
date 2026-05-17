@@ -132,9 +132,29 @@ function formatDateLabel(dateString: string) {
   return `${y}/${m}/${d}`;
 }
 
-function extractBirthYear(value: string) {
-  const matched = value.match(/^(\d{4})/);
-  return matched?.[1] ?? "";
+function extractBirthDateParts(value: string) {
+  const matched = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return {
+    year: matched?.[1] ?? "",
+    month: matched?.[2] ?? "",
+    day: matched?.[3] ?? "",
+  };
+}
+
+function getDaysInMonth(year: string, month: string) {
+  const parsedYear = Number(year);
+  const parsedMonth = Number(month);
+  if (!Number.isFinite(parsedYear) || !Number.isFinite(parsedMonth) || parsedMonth < 1 || parsedMonth > 12) {
+    return 31;
+  }
+  return new Date(parsedYear, parsedMonth, 0).getDate();
+}
+
+function buildBirthDateFromParts(year: string, month: string, day: string) {
+  if (!year || !month || !day) {
+    return "";
+  }
+  return `${year}-${month}-${day}`;
 }
 
 function wait(ms: number) {
@@ -483,6 +503,15 @@ export default function Home() {
   const surveyProgressPercent = (Math.min(activeSurveyStep + 1, Math.max(surveySteps.length, 1)) / Math.max(surveySteps.length, 1)) * 100;
   const currentYear = new Date().getFullYear();
   const birthYearOptions = Array.from({ length: currentYear - 1900 + 1 }, (_, index) => String(currentYear - index));
+  const birthMonthOptions = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
+  const birthDateParts =
+    currentSurveyQuestion?.presetKey === "birthDate"
+      ? extractBirthDateParts(surveyForm[currentSurveyQuestion.questionKey] ?? "")
+      : { year: "", month: "", day: "" };
+  const birthDayOptions = Array.from(
+    { length: getDaysInMonth(birthDateParts.year, birthDateParts.month) },
+    (_, index) => String(index + 1).padStart(2, "0"),
+  );
 
   const canProceedSurveyStep = (() => {
     if (!currentSurveyQuestion) return true;
@@ -1215,24 +1244,87 @@ export default function Home() {
                 {currentSurveyQuestion?.questionType === "date" ? (
                   currentSurveyQuestion.presetKey === "birthDate" ? (
                     <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
-                      <span className="mb-2 block text-sm font-semibold text-[#64748b]">生まれ年を選択</span>
-                      <select
-                        value={extractBirthYear(surveyForm[currentSurveyQuestion.questionKey] ?? "")}
-                        onChange={(event) =>
-                          setSurveyForm((prev) => ({
-                            ...prev,
-                            [currentSurveyQuestion.questionKey]: event.target.value ? `${event.target.value}-01-01` : "",
-                          }))
-                        }
-                        className="w-full bg-transparent text-2xl font-semibold outline-none"
-                      >
-                        <option value="">年を選択してください</option>
-                        {birthYearOptions.map((year) => (
-                          <option key={year} value={year}>
-                            {year}年
-                          </option>
-                        ))}
-                      </select>
+                      <span className="mb-2 block text-sm font-semibold text-[#64748b]">生年月日を選択</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        <select
+                          value={birthDateParts.year}
+                          onChange={(event) =>
+                            setSurveyForm((prev) => {
+                              const currentParts = extractBirthDateParts(prev[currentSurveyQuestion.questionKey] ?? "");
+                              const nextYear = event.target.value;
+                              const maxDay = getDaysInMonth(nextYear, currentParts.month);
+                              const currentDay = Number(currentParts.day);
+                              const nextDay =
+                                currentParts.day.length > 0
+                                  ? String(Math.min(Number.isNaN(currentDay) ? maxDay : currentDay, maxDay)).padStart(2, "0")
+                                  : "";
+                              return {
+                                ...prev,
+                                [currentSurveyQuestion.questionKey]: buildBirthDateFromParts(nextYear, currentParts.month, nextDay),
+                              };
+                            })
+                          }
+                          className="w-full rounded border border-[#d1d5db] bg-white px-2 py-3 text-base font-semibold outline-none"
+                        >
+                          <option value="">年</option>
+                          {birthYearOptions.map((year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={birthDateParts.month}
+                          onChange={(event) =>
+                            setSurveyForm((prev) => {
+                              const currentParts = extractBirthDateParts(prev[currentSurveyQuestion.questionKey] ?? "");
+                              const nextMonth = event.target.value;
+                              const maxDay = getDaysInMonth(currentParts.year, nextMonth);
+                              const currentDay = Number(currentParts.day);
+                              const nextDay =
+                                currentParts.day.length > 0
+                                  ? String(Math.min(Number.isNaN(currentDay) ? maxDay : currentDay, maxDay)).padStart(2, "0")
+                                  : "";
+                              return {
+                                ...prev,
+                                [currentSurveyQuestion.questionKey]: buildBirthDateFromParts(currentParts.year, nextMonth, nextDay),
+                              };
+                            })
+                          }
+                          className="w-full rounded border border-[#d1d5db] bg-white px-2 py-3 text-base font-semibold outline-none"
+                        >
+                          <option value="">月</option>
+                          {birthMonthOptions.map((month) => (
+                            <option key={month} value={month}>
+                              {month}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={birthDateParts.day}
+                          onChange={(event) =>
+                            setSurveyForm((prev) => {
+                              const currentParts = extractBirthDateParts(prev[currentSurveyQuestion.questionKey] ?? "");
+                              return {
+                                ...prev,
+                                [currentSurveyQuestion.questionKey]: buildBirthDateFromParts(
+                                  currentParts.year,
+                                  currentParts.month,
+                                  event.target.value,
+                                ),
+                              };
+                            })
+                          }
+                          className="w-full rounded border border-[#d1d5db] bg-white px-2 py-3 text-base font-semibold outline-none"
+                        >
+                          <option value="">日</option>
+                          {birthDayOptions.map((day) => (
+                            <option key={day} value={day}>
+                              {day}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </label>
                   ) : (
                     <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
