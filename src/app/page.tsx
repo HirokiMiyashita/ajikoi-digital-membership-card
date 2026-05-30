@@ -297,6 +297,7 @@ export default function Home() {
         const syncResult = await rpcClient.user.upsertFromLiff({
           userId: userProfile.userId,
           displayName: userProfile.displayName,
+          pictureUrl: userProfile.pictureUrl,
         });
         const syncedAt = performance.now();
         setPoints(syncResult.points);

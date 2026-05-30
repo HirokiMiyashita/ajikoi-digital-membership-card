@@ -1397,6 +1397,7 @@ export const appRouter = {
         z.object({
           userId: z.string().min(1),
           displayName: z.string().min(1),
+          pictureUrl: z.string().optional(),
         }),
       )
       .handler(async ({ input }) => {
@@ -1415,6 +1416,7 @@ export const appRouter = {
             INSERT INTO "users" (
               "userId",
               "displayName",
+              "pictureUrl",
               "points",
               "officialAccountId",
               "officialLinkedAt",
@@ -1424,6 +1426,7 @@ export const appRouter = {
             VALUES (
               ${input.userId},
               ${input.displayName},
+              ${input.pictureUrl ?? null},
               ${SIGNUP_INITIAL_POINTS},
               ${officialAccountId},
               ${officialAccountId ? new Date() : null},
@@ -1433,6 +1436,7 @@ export const appRouter = {
             ON CONFLICT ("userId") DO UPDATE
             SET
               "displayName" = EXCLUDED."displayName",
+              "pictureUrl" = COALESCE(EXCLUDED."pictureUrl", "users"."pictureUrl"),
               "officialAccountId" = COALESCE("users"."officialAccountId", EXCLUDED."officialAccountId"),
               "officialLinkedAt" = CASE
                 WHEN "users"."officialAccountId" IS NULL AND EXCLUDED."officialAccountId" IS NOT NULL
@@ -1442,6 +1446,7 @@ export const appRouter = {
               "updatedAt" = NOW()
             WHERE
               "users"."displayName" IS DISTINCT FROM EXCLUDED."displayName"
+              OR EXCLUDED."pictureUrl" IS NOT NULL AND "users"."pictureUrl" IS DISTINCT FROM EXCLUDED."pictureUrl"
               OR ("users"."officialAccountId" IS NULL AND EXCLUDED."officialAccountId" IS NOT NULL)
             RETURNING
               "userId",
