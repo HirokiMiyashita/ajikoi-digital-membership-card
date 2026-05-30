@@ -14,6 +14,7 @@ export default async function AdminMembersPage() {
       select: {
         userId: true,
         displayName: true,
+        pictureUrl: true,
         role: true,
         createdAt: true,
         lastCheckInAt: true,
@@ -72,6 +73,7 @@ export default async function AdminMembersPage() {
       initialMembers={members.map((row) => ({
         userId: row.userId,
         displayName: row.displayName,
+        pictureUrl: row.pictureUrl,
         role: row.role,
         checkInCount: row._count.checkIns,
         rankName: row.rank.name,

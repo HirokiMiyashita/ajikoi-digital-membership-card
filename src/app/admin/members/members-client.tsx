@@ -10,6 +10,7 @@ type OfficialAccountOption = {
 type MemberRow = {
   userId: string;
   displayName: string;
+  pictureUrl: string | null;
   role: "staff" | null;
   assignedOfficialAccountId: string | null;
   checkInCount: number;
@@ -22,6 +23,37 @@ type MembersClientProps = {
   initialMembers: MemberRow[];
   officialAccounts: OfficialAccountOption[];
 };
+
+function MemberAvatar({
+  displayName,
+  pictureUrl,
+}: {
+  displayName: string;
+  pictureUrl: string | null;
+}) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const initial = displayName.trim().charAt(0) || "?";
+
+  if (pictureUrl && !imageFailed) {
+    return (
+      <img
+        src={pictureUrl}
+        alt=""
+        className="h-8 w-8 shrink-0 rounded-full bg-[#e2e8f0] object-cover"
+        onError={() => setImageFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e2e8f0] text-xs font-semibold text-[#475569]"
+    >
+      {initial}
+    </span>
+  );
+}
 
 type MemberGiftOption = {
   id: string;
@@ -323,9 +355,12 @@ export default function MembersClient({ initialMembers, officialAccounts }: Memb
                 key={row.userId}
                 className="grid grid-cols-[minmax(0,1fr)_68px_56px_96px_44px] items-center border-b border-[#f1f5f9] px-3 py-3 text-sm text-[#0f172a] last:border-b-0 sm:px-4"
               >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{row.displayName}</p>
-                  <p className="hidden truncate text-xs text-[#94a3b8] sm:block">{row.userId}</p>
+                <div className="flex min-w-0 items-center gap-2">
+                  <MemberAvatar displayName={row.displayName} pictureUrl={row.pictureUrl} />
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{row.displayName}</p>
+                    <p className="hidden truncate text-xs text-[#94a3b8] sm:block">{row.userId}</p>
+                  </div>
                 </div>
                 <p className="truncate px-1 text-center text-xs sm:px-2 sm:text-sm">{row.rankName}</p>
                 <p className="px-1 text-center text-sm font-semibold sm:px-2">{row.checkInCount}回</p>
