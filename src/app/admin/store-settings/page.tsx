@@ -33,7 +33,6 @@ export default async function StoreSettingsPage() {
           lineAddFriendUrl: store.lineAddFriendUrl ?? "",
           googleReviewUrl: store.googleReviewUrl ?? "",
         }}
-        memberUrl={memberUrl}
         liffEndpointUrl={memberUrl}
         richMenuUrl={richMenuUrl}
       />

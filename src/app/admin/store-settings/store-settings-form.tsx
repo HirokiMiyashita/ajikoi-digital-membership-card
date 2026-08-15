@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 type StoreSettings = {
@@ -16,12 +15,10 @@ type StoreSettings = {
 
 export default function StoreSettingsForm({
   initialValues,
-  memberUrl,
   liffEndpointUrl,
   richMenuUrl,
 }: {
   initialValues: StoreSettings;
-  memberUrl: string;
   liffEndpointUrl: string;
   richMenuUrl: string;
 }) {
@@ -60,9 +57,6 @@ export default function StoreSettingsForm({
 
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl space-y-4 rounded-xl bg-white p-5 shadow-sm">
-      <Link href={memberUrl} target="_blank" className="text-sm font-bold text-[#0f766e] underline">
-        会員証を確認
-      </Link>
       <section className="space-y-3 rounded-xl border border-[#ccfbf1] bg-[#f0fdfa] p-4">
         <div>
           <h2 className="text-sm font-bold text-[#115e59]">LINE側に登録するURL</h2>

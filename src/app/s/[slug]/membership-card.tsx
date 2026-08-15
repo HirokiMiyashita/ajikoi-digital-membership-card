@@ -1311,51 +1311,85 @@ export default function MembershipCard({ store }: { store: PublicStoreProfile })
         </div>
       ) : null}
       {needsSurvey && profile && !isAutoCheckinProcessing ? (
-        <div className="fixed inset-0 z-60 overflow-y-auto bg-[#f3f4f7]">
-          <div className="mx-auto min-h-screen w-full max-w-md px-6 pb-10 pt-6 text-[#1f2937]">
-            <section className="rounded-xl bg-[#d5e8e8] px-4 py-5">
-              <p className="text-base font-semibold">アンケート回答で会員登録</p>
-            </section>
-
-            <div className="mt-5 flex items-center gap-3">
-              <div className="h-2 flex-1 rounded-full bg-[#e5e7eb]">
+        <div className="fixed inset-0 z-60 overflow-y-auto bg-[#f7f8fa]">
+          <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pt-5 text-[#1f2937]">
+            <header className="rounded-2xl border border-[#e5e7eb] bg-white px-4 py-4 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[15px] font-bold text-[#1f2937]">会員登録アンケート</p>
+                  <p className="mt-0.5 text-xs text-[#64748b]">あと少しで会員証をご利用いただけます</p>
+                </div>
+                <p className="shrink-0 text-xs font-semibold text-[#64748b]">
+                  {activeSurveyStep + 1} / {surveySteps.length}
+                </p>
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e5e7eb]">
                 <div
-                  className="h-2 rounded-full bg-[#14b8a6] transition-all"
-                  style={{ width: `${surveyProgressPercent}%` }}
+                  className="h-full rounded-full transition-all duration-300"
+                  style={{
+                    width: `${surveyProgressPercent}%`,
+                    backgroundColor: store.themeColor,
+                  }}
                 />
               </div>
-              <p className="w-10 text-right text-sm font-semibold text-[#64748b]">{surveyProgress}</p>
-            </div>
+            </header>
 
-            <section className="mt-8">
-              <h2 className="text-center text-4xl font-bold tracking-tight">{currentSurveyQuestion?.label ?? "アンケート"}</h2>
+            <section className="flex-1 py-7">
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#94a3b8]">
+                Question {surveyProgress}
+              </p>
+              <h2 className="mt-2 text-[26px] font-bold leading-tight tracking-tight">
+                {currentSurveyQuestion?.label ?? "アンケート"}
+              </h2>
 
-              <div className="mt-8 space-y-3">
+              <div className="mt-6 space-y-2.5">
                 {currentSurveyQuestion?.questionType === "single_select"
-                  ? currentSurveyQuestion.options.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() =>
-                          setSurveyForm((prev) => ({
-                            ...prev,
-                            [currentSurveyQuestion.questionKey]: option.value,
-                          }))
-                        }
-                        className={`w-full rounded-lg border px-4 py-4 text-left text-2xl font-semibold ${
-                          (surveyForm[currentSurveyQuestion.questionKey] ?? "") === option.value
-                            ? "border-[#14b8a6] bg-[#d5e8e8] text-[#0f172a]"
-                            : "border-[#d1d5db] bg-white text-[#1f2937]"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))
+                  ? currentSurveyQuestion.options.map((option) => {
+                      const isSelected =
+                        (surveyForm[currentSurveyQuestion.questionKey] ?? "") === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() =>
+                            setSurveyForm((prev) => ({
+                              ...prev,
+                              [currentSurveyQuestion.questionKey]: option.value,
+                            }))
+                          }
+                          className="flex min-h-14 w-full items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 text-left text-base font-semibold shadow-sm transition"
+                          style={
+                            isSelected
+                              ? {
+                                  borderColor: store.themeColor,
+                                  backgroundColor: `color-mix(in srgb, ${store.themeColor} 9%, white)`,
+                                }
+                              : { borderColor: "#e2e8f0" }
+                          }
+                        >
+                          <span>{option.label}</span>
+                          <span
+                            className="flex size-5 shrink-0 items-center justify-center rounded-full border text-xs font-bold text-white"
+                            style={
+                              isSelected
+                                ? {
+                                    borderColor: store.themeColor,
+                                    backgroundColor: store.themeColor,
+                                  }
+                                : { borderColor: "#cbd5e1" }
+                            }
+                            aria-hidden="true"
+                          >
+                            {isSelected ? "✓" : ""}
+                          </span>
+                        </button>
+                      );
+                    })
                   : null}
 
                 {currentSurveyQuestion?.questionType === "date" ? (
                   currentSurveyQuestion.presetKey === "birthDate" ? (
-                    <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
+                    <label className="block rounded-xl border border-[#e2e8f0] bg-white px-4 py-4 shadow-sm">
                       <span className="mb-2 block text-sm font-semibold text-[#64748b]">生年月日を選択</span>
                       <div className="grid grid-cols-3 gap-2">
                         <select
@@ -1383,7 +1417,7 @@ export default function MembershipCard({ store }: { store: PublicStoreProfile })
                               ),
                             }));
                           }}
-                          className="w-full rounded border border-[#d1d5db] bg-white px-2 py-3 text-base font-semibold outline-none"
+                          className="w-full rounded-lg border border-[#d1d5db] bg-white px-2 py-2.5 text-sm font-semibold outline-none"
                         >
                           <option value="">年</option>
                           {birthYearOptions.map((year) => (
@@ -1417,7 +1451,7 @@ export default function MembershipCard({ store }: { store: PublicStoreProfile })
                               ),
                             }));
                           }}
-                          className="w-full rounded border border-[#d1d5db] bg-white px-2 py-3 text-base font-semibold outline-none"
+                          className="w-full rounded-lg border border-[#d1d5db] bg-white px-2 py-2.5 text-sm font-semibold outline-none"
                         >
                           <option value="">月</option>
                           {birthMonthOptions.map((month) => (
@@ -1444,7 +1478,7 @@ export default function MembershipCard({ store }: { store: PublicStoreProfile })
                               ),
                             }));
                           }}
-                          className="w-full rounded border border-[#d1d5db] bg-white px-2 py-3 text-base font-semibold outline-none"
+                          className="w-full rounded-lg border border-[#d1d5db] bg-white px-2 py-2.5 text-sm font-semibold outline-none"
                         >
                           <option value="">日</option>
                           {birthDayOptions.map((day) => (
@@ -1456,7 +1490,7 @@ export default function MembershipCard({ store }: { store: PublicStoreProfile })
                       </div>
                     </label>
                   ) : (
-                    <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
+                    <label className="block rounded-xl border border-[#e2e8f0] bg-white px-4 py-4 shadow-sm">
                       <span className="mb-2 block text-sm font-semibold text-[#64748b]">日付を選択</span>
                       <input
                         type="date"
@@ -1468,14 +1502,14 @@ export default function MembershipCard({ store }: { store: PublicStoreProfile })
                             [currentSurveyQuestion.questionKey]: event.target.value,
                           }))
                         }
-                        className="w-full bg-transparent text-2xl font-semibold outline-none"
+                        className="w-full bg-transparent text-base font-semibold outline-none"
                       />
                     </label>
                   )
                 ) : null}
 
                 {currentSurveyQuestion?.questionType === "text" ? (
-                  <label className="block rounded-lg border border-[#d1d5db] bg-white px-4 py-4">
+                  <label className="block rounded-xl border border-[#e2e8f0] bg-white px-4 py-4 shadow-sm">
                     <span className="mb-2 block text-sm font-semibold text-[#64748b]">{currentSurveyQuestion.label}</span>
                     <textarea
                       value={surveyForm[currentSurveyQuestion.questionKey] ?? ""}
@@ -1486,21 +1520,21 @@ export default function MembershipCard({ store }: { store: PublicStoreProfile })
                         }))
                       }
                       placeholder={currentSurveyQuestion.placeholder ?? "自由に入力してください"}
-                      className="min-h-24 w-full resize-y bg-transparent text-lg font-semibold outline-none"
+                      className="min-h-24 w-full resize-y bg-transparent text-base font-medium outline-none"
                     />
                   </label>
                 ) : null}
               </div>
             </section>
 
-            {surveyError ? <p className="mt-4 text-sm font-semibold text-[#b91c1c]">{surveyError}</p> : null}
+            {surveyError ? <p className="mb-3 text-sm font-semibold text-[#b91c1c]">{surveyError}</p> : null}
 
-            <div className="mt-8 flex gap-3">
+            <div className="sticky bottom-0 -mx-5 mt-auto flex gap-3 border-t border-[#e5e7eb] bg-white/95 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
               <button
                 type="button"
                 onClick={handleSurveyBack}
                 disabled={activeSurveyStep === 0 || isSubmittingSurvey}
-                className="w-1/3 rounded-lg border border-[#cbd5e1] bg-white py-3 text-sm font-bold text-[#334155] disabled:opacity-40"
+                className="w-1/3 rounded-xl border border-[#cbd5e1] bg-white py-3 text-sm font-bold text-[#334155] disabled:opacity-40"
               >
                 戻る
               </button>
@@ -1508,7 +1542,12 @@ export default function MembershipCard({ store }: { store: PublicStoreProfile })
                 type="button"
                 onClick={() => void handleSurveyNext()}
                 disabled={!canProceedSurveyStep || isSubmittingSurvey}
-                className="w-2/3 rounded-lg bg-[#0f9f99] py-3 text-base font-bold text-white disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
+                className="w-2/3 rounded-xl py-3 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:bg-[#94a3b8]"
+                style={
+                  canProceedSurveyStep && !isSubmittingSurvey
+                    ? { backgroundColor: store.themeColor }
+                    : undefined
+                }
               >
                 {activeSurveyStep === surveySteps.length - 1
                   ? isSubmittingSurvey
