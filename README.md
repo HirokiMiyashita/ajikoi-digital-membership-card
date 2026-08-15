@@ -30,6 +30,7 @@ npm run dev
 4. `/admin/store-settings` でブランドやLINE設定を変更
 5. 会員証は `/s/{店舗slug}` で公開
 
+
 LIFF endpoint URLは店舗ごとに `https://YOUR_DOMAIN/s/{店舗slug}` を設定してください。
 
 ## DBマイグレーション
