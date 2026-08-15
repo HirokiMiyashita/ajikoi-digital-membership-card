@@ -271,11 +271,41 @@ model OfficialAccount {
   memberBenefitSettings            MemberBenefitSetting[]
   storeStatus                      StoreStatus?
   businessHours                    StoreBusinessHour[]
+  richMenu                         StoreRichMenu?
   createdAt                        DateTime                          @default(now())
   updatedAt                        DateTime                          @updatedAt
 
   @@index([liffId])
   @@map("official_accounts")
+}
+
+enum RichMenuStatus {
+  DRAFT
+  PUBLISHED
+  ERROR
+}
+
+model StoreRichMenu {
+  id                String          @id @default(cuid())
+  officialAccountId String          @unique
+  name              String          @default("店舗リッチメニュー")
+  lineRichMenuId    String?         @unique
+  imageUrl          String?
+  templateKey       String          @default("large-6")
+  sizeWidth         Int             @default(2500)
+  sizeHeight        Int             @default(1686)
+  selected          Boolean         @default(true)
+  chatBarText       String          @default("メニュー")
+  areas             Json
+  status            RichMenuStatus  @default(DRAFT)
+  lastPublishedAt   DateTime?
+  lastError         String?         @db.Text
+  officialAccount   OfficialAccount @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([officialAccountId, status])
+  @@map("store_rich_menus")
 }
 
 enum BusinessHourDay {

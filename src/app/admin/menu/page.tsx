@@ -7,6 +7,7 @@ const menuItems = [
   { label: "会員設定", href: "/admin/member-settings" },
   { label: "口コミパスワード", href: "/admin/review-password" },
   { label: "会員登録アンケート", href: "/admin/survey-settings" },
+  { label: "リッチメニュー設定", href: "/admin/rich-menu" },
   { label: "QRコードを印刷", href: "/admin/print-qr" },
   { label: "営業時間登録", href: "/admin/business-hours" },
   { label: "店舗設定", href: "/admin/store-settings" },

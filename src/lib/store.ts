@@ -24,11 +24,19 @@ export async function getStoreBySlug(slug: string) {
 }
 
 export async function getStoreLineAccessToken(officialAccountId: string) {
+  return (
+    (await getConfiguredStoreLineAccessToken(officialAccountId)) ??
+    process.env.LINE_CHANNEL_ACCESS_TOKEN ??
+    null
+  );
+}
+
+export async function getConfiguredStoreLineAccessToken(officialAccountId: string) {
   const store = await prisma.officialAccount.findUnique({
     where: { id: officialAccountId },
     select: { lineChannelAccessToken: true },
   });
   return store?.lineChannelAccessToken
     ? decryptSecret(store.lineChannelAccessToken)
-    : process.env.LINE_CHANNEL_ACCESS_TOKEN ?? null;
+    : null;
 }

@@ -11,6 +11,7 @@ export default async function AdminPrintQrPage() {
     select: {
       name: true,
       displayName: true,
+      slug: true,
       visitQrToken: true,
       liffId: true,
     },
