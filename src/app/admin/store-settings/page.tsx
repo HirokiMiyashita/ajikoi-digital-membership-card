@@ -7,6 +7,15 @@ export default async function StoreSettingsPage() {
   const store = await prisma.officialAccount.findUniqueOrThrow({
     where: { id: admin.officialAccountId! },
   });
+  const vercelHost =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_URL;
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ??
+    (vercelHost ? `https://${vercelHost}` : "http://localhost:3000");
+  const memberUrl = `${baseUrl}/s/${store.slug}`;
+  const richMenuUrl = store.liffId
+    ? `https://liff.line.me/${store.liffId}`
+    : "";
 
   return (
     <div className="space-y-4 p-4">
@@ -24,7 +33,9 @@ export default async function StoreSettingsPage() {
           lineAddFriendUrl: store.lineAddFriendUrl ?? "",
           googleReviewUrl: store.googleReviewUrl ?? "",
         }}
-        memberUrl={`/s/${store.slug}`}
+        memberUrl={memberUrl}
+        liffEndpointUrl={memberUrl}
+        richMenuUrl={richMenuUrl}
       />
     </div>
   );
