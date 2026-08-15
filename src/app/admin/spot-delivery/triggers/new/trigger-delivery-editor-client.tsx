@@ -22,6 +22,7 @@ type GiftEditorMessage = {
   type: "gift";
   gift: GiftOption | null;
   existingMessage: LineFlexMessage | null;
+  altText: string;
 };
 type EditorMessage = TextEditorMessage | ImageEditorMessage | GiftEditorMessage;
 
@@ -134,6 +135,7 @@ function createInitialEditorMessages(messages: LineMessage[], gifts: GiftOption[
       type: "gift",
       gift: heroUrl ? gifts.find((gift) => gift.lineImageUrl === heroUrl) ?? null : null,
       existingMessage: message,
+      altText: message.altText,
     };
   });
 }
@@ -157,7 +159,6 @@ export default function TriggerDeliveryEditorClient({
   const [title, setTitle] = useState(initialValue?.title ?? "");
   const [activeTab, setActiveTab] = useState<"content" | "segment">("content");
   const [triggerType, setTriggerType] = useState<TriggerType>(initialValue?.triggerType ?? "USER_SIGNUP");
-  const [notificationText, setNotificationText] = useState(initialValue?.notificationText ?? "");
   const [editorMessages, setEditorMessages] = useState<EditorMessage[]>(initialEditorMessages);
   const [draggedMessageId, setDraggedMessageId] = useState<string | null>(null);
   const [dragOverMessageId, setDragOverMessageId] = useState<string | null>(null);
@@ -237,7 +238,7 @@ export default function TriggerDeliveryEditorClient({
     setEditorMessages((prev) =>
       prev.length >= MAX_MESSAGE_COUNT
         ? prev
-        : [...prev, { id, type: "gift", gift: null, existingMessage: null }],
+        : [...prev, { id, type: "gift", gift: null, existingMessage: null, altText: "" }],
     );
     setGiftSheetMessageId(id);
   };
@@ -316,7 +317,7 @@ export default function TriggerDeliveryEditorClient({
       return {
         ...item.existingMessage,
         altText:
-          notificationText.trim() ||
+          item.altText.trim() ||
           item.existingMessage.altText ||
           item.gift?.title ||
           getFlexTitle(item.existingMessage),
@@ -337,7 +338,7 @@ export default function TriggerDeliveryEditorClient({
         : `https://example.com/?giftId=${encodeURIComponent(item.gift.id)}`;
     return {
       type: "flex",
-      altText: notificationText.trim() || item.gift.title,
+      altText: item.altText.trim() || item.gift.title,
       contents: {
         type: "bubble",
         hero: {
@@ -478,7 +479,9 @@ export default function TriggerDeliveryEditorClient({
         body: JSON.stringify({
           title: title.trim(),
           triggerType,
-          notificationText: notificationText.trim(),
+          notificationText:
+            lineMessages.find((message): message is LineFlexMessage => message.type === "flex")
+              ?.altText ?? "",
           messages: lineMessages,
           targetRankIds,
           targetGender,
@@ -567,16 +570,6 @@ export default function TriggerDeliveryEditorClient({
             {activeTab === "content" ? (
               <>
             <section className="space-y-3 rounded-lg border border-[#e2e8f0] p-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-[#334155]">Flex通知表示テキスト（任意）</p>
-              </div>
-              <input
-                value={notificationText}
-                onChange={(event) => setNotificationText(event.target.value)}
-                maxLength={400}
-                placeholder="ギフト通知に表示。未入力の場合はギフト名"
-                className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
-              />
               <label className="block space-y-1">
                 <span className="text-sm font-semibold text-[#334155]">トリガー条件</span>
                 <select
@@ -788,6 +781,37 @@ export default function TriggerDeliveryEditorClient({
                         </button>
                       </div>
                     </div>
+                    {item.gift || item.existingMessage ? (
+                      <label className="mt-3 block space-y-1">
+                        <span className="text-xs font-semibold text-[#475569]">
+                          通知に表示するテキスト（任意）
+                        </span>
+                        <input
+                          value={item.altText}
+                          onChange={(event) => {
+                            const altText = event.target.value;
+                            setEditorMessages((prev) =>
+                              prev.map((messageItem) =>
+                                messageItem.id === item.id && messageItem.type === "gift"
+                                  ? { ...messageItem, altText }
+                                  : messageItem,
+                              ),
+                            );
+                          }}
+                          maxLength={400}
+                          placeholder={`未入力の場合は「${
+                            item.gift?.title ??
+                            (item.existingMessage
+                              ? getFlexTitle(item.existingMessage)
+                              : "ギフト")
+                          }」`}
+                          className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-sm outline-none focus:border-[#0f9f99]"
+                        />
+                        <span className="block text-xs text-[#64748b]">
+                          LINEの通知に表示されます。未入力の場合はギフト名が表示されます。
+                        </span>
+                      </label>
+                    ) : null}
                   </>
                 ) : null}
               </section>

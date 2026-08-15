@@ -53,6 +53,7 @@ type GiftBlock = {
   id: string;
   type: "gift";
   gift: GiftOption | null;
+  altText: string;
 };
 type MessageBlock = TextBlock | ImageBlock | GiftBlock;
 
@@ -62,7 +63,6 @@ const createBlockId = () => crypto.randomUUID();
 export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCount }: Props) {
   const [title, setTitle] = useState("");
   const [activeTab, setActiveTab] = useState<"content" | "segment">("content");
-  const [notificationText, setNotificationText] = useState("");
   const [blocks, setBlocks] = useState<MessageBlock[]>([]);
   const [draggedBlockId, setDraggedBlockId] = useState<string | null>(null);
   const [dragOverBlockId, setDragOverBlockId] = useState<string | null>(null);
@@ -180,7 +180,7 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
       return;
     }
     setBlocks((prev) =>
-      prev.length >= MAX_MESSAGE_BLOCKS ? prev : [...prev, { id, type, gift: null }],
+      prev.length >= MAX_MESSAGE_BLOCKS ? prev : [...prev, { id, type, gift: null, altText: "" }],
     );
     setEditingGiftBlockId(id);
     setIsGiftSheetOpen(true);
@@ -308,7 +308,7 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
           : `https://example.com/?giftId=${encodeURIComponent(block.gift.id)}`;
       return {
         type: "flex",
-        altText: notificationText.trim() || block.gift.title,
+        altText: block.altText.trim() || block.gift.title,
         contents: {
           type: "bubble",
           hero: {
@@ -376,7 +376,9 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
-          notificationText: notificationText.trim(),
+          notificationText:
+            lineMessages.find((message): message is LineFlexMessage => message.type === "flex")
+              ?.altText ?? "",
           messages: lineMessages,
           targetFilters: {
             rankIds: targetRankIds,
@@ -392,7 +394,6 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
       }
       showToast("配信ジョブを開始しました。");
       setTitle("");
-      setNotificationText("");
       uploadedBlocks.forEach((block) => {
         if (block.type === "image" && block.previewUrl) {
           URL.revokeObjectURL(block.previewUrl);
@@ -478,19 +479,6 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
 
             {activeTab === "content" ? (
               <>
-                <section className="space-y-3 rounded-lg border border-[#e2e8f0] p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-[#334155]">Flex通知表示テキスト（任意）</p>
-                  </div>
-                  <input
-                    value={notificationText}
-                    onChange={(event) => setNotificationText(event.target.value)}
-                    maxLength={400}
-                    placeholder="ギフト通知に表示。未入力の場合はギフト名"
-                    className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
-                  />
-                </section>
-
                 {blocks.map((block) => (
                   <section
                     key={block.id}
@@ -617,6 +605,32 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
                             </button>
                           </div>
                         </div>
+                        {block.gift ? (
+                          <label className="mt-3 block space-y-1">
+                            <span className="text-xs font-semibold text-[#475569]">
+                              通知に表示するテキスト（任意）
+                            </span>
+                            <input
+                              value={block.altText}
+                              onChange={(event) => {
+                                const altText = event.target.value;
+                                setBlocks((prev) =>
+                                  prev.map((item) =>
+                                    item.id === block.id && item.type === "gift"
+                                      ? { ...item, altText }
+                                      : item,
+                                  ),
+                                );
+                              }}
+                              maxLength={400}
+                              placeholder={`未入力の場合は「${block.gift.title}」`}
+                              className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
+                            />
+                            <span className="block text-xs text-[#64748b]">
+                              LINEの通知に表示されます。未入力の場合はギフト名が表示されます。
+                            </span>
+                          </label>
+                        ) : null}
                       </>
                     ) : null}
                   </section>
