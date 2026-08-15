@@ -9,6 +9,7 @@ import {
   RichMenuTemplate,
   getRichMenuTemplate,
 } from "@/lib/rich-menu";
+import RichMenuImageEditor from "./rich-menu-image-editor";
 
 type RichMenuStatus = "DRAFT" | "PUBLISHED" | "ERROR";
 
@@ -36,6 +37,7 @@ type Notice = {
 };
 
 const MAX_IMAGE_SIZE = 1024 * 1024;
+const MAX_EDIT_SOURCE_SIZE = 15 * 1024 * 1024;
 const AREA_LABELS = "ABCDEFGHIJKLMNOPQRST".split("");
 
 function TemplateDiagram({
@@ -87,6 +89,7 @@ export default function RichMenuEditorClient({
 }: Props) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editFileInputRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(initialValue.name);
   const [chatBarText, setChatBarText] = useState(initialValue.chatBarText);
   const [selected, setSelected] = useState(initialValue.selected);
@@ -101,6 +104,8 @@ export default function RichMenuEditorClient({
     "save" | "publish" | "unpublish" | "upload" | null
   >(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [isImageChoiceOpen, setIsImageChoiceOpen] = useState(false);
+  const [editSourceFile, setEditSourceFile] = useState<File | null>(null);
 
   const template = useMemo(
     () => getRichMenuTemplate(templateKey) ?? RICH_MENU_TEMPLATES[0],
@@ -263,9 +268,33 @@ export default function RichMenuEditorClient({
     if (nextTemplate.width !== template.width || nextTemplate.height !== template.height) {
       setImageUrl(null);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (editFileInputRef.current) editFileInputRef.current.value = "";
       showNotice("サイズが変わったため、背景画像を選び直してください。", "success");
     }
     setTemplateKey(nextTemplate.key);
+  };
+
+  const uploadImage = async (file: File) => {
+    setOperation("upload");
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      const response = await fetch("/api/admin/rich-menu/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) {
+        throw new Error(
+          await readResponseMessage(response, "画像アップロードに失敗しました。"),
+        );
+      }
+      const result = (await response.json()) as { imageUrl?: string };
+      if (!result.imageUrl) throw new Error("画像URLを取得できませんでした。");
+      setImageUrl(result.imageUrl);
+      showNotice("背景画像をアップロードしました。", "success");
+    } finally {
+      setOperation(null);
+    }
   };
 
   const handleImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -282,7 +311,6 @@ export default function RichMenuEditorClient({
       return;
     }
 
-    setOperation("upload");
     try {
       const bitmap = await createImageBitmap(file);
       const dimensionsMatch =
@@ -298,30 +326,34 @@ export default function RichMenuEditorClient({
         return;
       }
 
-      const formData = new FormData();
-      formData.set("file", file);
-      const response = await fetch("/api/admin/rich-menu/upload", {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) {
-        event.target.value = "";
-        showNotice(
-          await readResponseMessage(response, "画像アップロードに失敗しました。"),
-          "error",
-        );
-        return;
-      }
-      const result = (await response.json()) as { imageUrl?: string };
-      if (!result.imageUrl) throw new Error("imageUrl is missing");
-      setImageUrl(result.imageUrl);
-      showNotice("背景画像をアップロードしました。", "success");
-    } catch {
+      await uploadImage(file);
+      setIsImageChoiceOpen(false);
+    } catch (cause) {
       event.target.value = "";
-      showNotice("画像を読み込めませんでした。別の画像をお試しください。", "error");
-    } finally {
-      setOperation(null);
+      showNotice(
+        cause instanceof Error
+          ? cause.message
+          : "画像を読み込めませんでした。別の画像をお試しください。",
+        "error",
+      );
     }
+  };
+
+  const handleEditImageChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      event.target.value = "";
+      showNotice("PNGまたはJPEG画像を選択してください。", "error");
+      return;
+    }
+    if (file.size > MAX_EDIT_SOURCE_SIZE) {
+      event.target.value = "";
+      showNotice("編集元の画像は15MB以下にしてください。", "error");
+      return;
+    }
+    setIsImageChoiceOpen(false);
+    setEditSourceFile(file);
   };
 
   const updateAction = (action: RichMenuAction) => {
@@ -464,18 +496,24 @@ export default function RichMenuEditorClient({
           <div className="grid items-start gap-7 xl:grid-cols-[360px_minmax(0,1fr)]">
             <div className="xl:sticky xl:top-4">
               <h3 className="mb-3 text-sm font-bold text-[#334155]">プレビュー</h3>
-              <div className="mx-auto max-w-[340px] overflow-hidden rounded-[2rem] border-[7px] border-[#1e293b] bg-[#edf7f3] shadow-xl">
-                <div className="flex items-center justify-between bg-[#263238] px-4 py-3 text-white">
-                  <span className="text-xs font-bold">{storeName}</span>
+              <div className="mx-auto flex aspect-[9/19.5] w-full max-w-[320px] flex-col overflow-hidden rounded-[2.5rem] border-[7px] border-[#1e293b] bg-[#edf7f3] shadow-xl">
+                <div className="relative flex h-7 shrink-0 items-center justify-between bg-[#263238] px-4 text-[10px] font-bold text-white">
+                  <span>9:41</span>
+                  <span className="absolute left-1/2 h-4 w-20 -translate-x-1/2 rounded-full bg-[#111827]" />
+                  <span aria-hidden="true">● ◔ ▰</span>
+                </div>
+                <div className="flex h-12 shrink-0 items-center justify-between border-b border-black/10 bg-[#263238] px-4 text-white">
+                  <span aria-hidden="true" className="text-lg">‹</span>
+                  <span className="max-w-[70%] truncate text-sm font-bold">{storeName}</span>
                   <span aria-hidden="true" className="text-sm">•••</span>
                 </div>
-                <div className="flex h-40 items-end p-3">
+                <div className="flex min-h-0 flex-1 items-end p-3">
                   <span className="max-w-[75%] rounded-xl bg-white px-3 py-2 text-xs text-[#475569] shadow-sm">
                     メニューからご希望の項目を選択してください。
                   </span>
                 </div>
                 <div
-                  className="relative w-full overflow-hidden border-y border-[#94a3b8] bg-[#e2e8f0] bg-cover bg-center"
+                  className="relative w-full shrink-0 overflow-hidden border-y border-[#94a3b8] bg-[#e2e8f0] bg-cover bg-center"
                   style={{
                     aspectRatio: `${template.width} / ${template.height}`,
                     backgroundImage: imageUrl ? `url("${imageUrl}")` : undefined,
@@ -552,16 +590,27 @@ export default function RichMenuEditorClient({
                   ピクセル寸法はアップロード前に確認します。
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-3">
-                  <label className="cursor-pointer rounded-lg border border-[#0f766e] bg-white px-4 py-2 text-sm font-bold text-[#0f766e] hover:bg-[#f0fdfa]">
+                  <button
+                    type="button"
+                    onClick={() => setIsImageChoiceOpen(true)}
+                    className="rounded-lg border border-[#0f766e] bg-white px-4 py-2 text-sm font-bold text-[#0f766e] hover:bg-[#f0fdfa]"
+                  >
                     {operation === "upload" ? "アップロード中..." : imageUrl ? "画像を変更" : "画像を選択"}
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/png,image/jpeg"
-                      onChange={handleImageChange}
-                      className="sr-only"
-                    />
-                  </label>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={handleImageChange}
+                    className="sr-only"
+                  />
+                  <input
+                    ref={editFileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg"
+                    onChange={handleEditImageChange}
+                    className="sr-only"
+                  />
                   {imageUrl ? (
                     <button
                       type="button"
@@ -732,6 +781,73 @@ export default function RichMenuEditorClient({
           </div>
         </section>
       </fieldset>
+
+      {isImageChoiceOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="image-upload-choice-title"
+            className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-center justify-between">
+              <h2 id="image-upload-choice-title" className="text-lg font-bold text-[#0f172a]">
+                画像の適用方法を選択
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsImageChoiceOpen(false)}
+                aria-label="閉じる"
+                className="text-2xl text-[#64748b]"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-5 space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsImageChoiceOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                className="w-full rounded-xl border-2 border-[#86efac] p-4 text-left hover:bg-[#f0fdf4]"
+              >
+                <span className="block font-bold text-[#059669]">↑ 画像をそのままアップロード</span>
+                <span className="mt-1 block text-xs leading-relaxed text-[#64748b]">
+                  {template.width}×{template.height}px、PNGまたはJPEG、1MB以下の完成済み画像を適用します。
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => editFileInputRef.current?.click()}
+                className="w-full rounded-xl border-2 border-[#86efac] p-4 text-left hover:bg-[#f0fdf4]"
+              >
+                <span className="block font-bold text-[#059669]">✎ 画像を編集して適用</span>
+                <span className="mt-1 block text-xs leading-relaxed text-[#64748b]">
+                  画像を切り抜き、拡大・位置調整や文字入れをしてから適用します。
+                </span>
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {editSourceFile ? (
+        <RichMenuImageEditor
+          file={editSourceFile}
+          width={template.width}
+          height={template.height}
+          onCancel={() => {
+            setEditSourceFile(null);
+            if (editFileInputRef.current) editFileInputRef.current.value = "";
+          }}
+          onApply={async (file) => {
+            await uploadImage(file);
+            setEditSourceFile(null);
+            if (editFileInputRef.current) editFileInputRef.current.value = "";
+          }}
+        />
+      ) : null}
 
       {notice ? (
         <div
