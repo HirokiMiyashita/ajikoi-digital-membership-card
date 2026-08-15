@@ -20,7 +20,7 @@ import {
 import { rpcClient } from "@/orpc/client";
 
 type ReportMetrics = {
-  memberTrend: Array<{ day: string; members: number }>;
+  memberTrend: Array<{ day: string; members: number; newMembers: number }>;
   repeaterTrend: Array<{ day: string; repeaters: number }>;
   visitTrend: Array<{ day: string; newVisits: number; repeatVisits: number; totalVisits: number }>;
   repeaterSummary: {
@@ -137,6 +137,7 @@ export default function ReportClient({ initialData }: Props) {
   const memberChartData = memberTrend.map((row, index) => ({
     day: toLabel(row.day),
     members: row.members,
+    newMembers: row.newMembers,
     repeaters: repeaterTrend[index]?.repeaters ?? 0,
   }));
   const visitChartData = useMemo(() => {
@@ -223,6 +224,10 @@ export default function ReportClient({ initialData }: Props) {
   }
   const visitorsDisplay = repeaterSummary.visitors.toLocaleString();
   const repeatersDisplay = repeaterSummary.repeaters.toLocaleString();
+  const newCustomersDisplay = memberTrend
+    .slice(-30)
+    .reduce((total, row) => total + row.newMembers, 0)
+    .toLocaleString();
   const visitDonutColors = ["#0f9f99", "#ea7b47", "#f59e0b", "#818cf8", "#f472b6"];
   const ageDonutColors = ["#0f9f99", "#ea7b47", "#f59e0b", "#818cf8", "#f472b6", "#38bdf8", "#94a3b8"];
   const genderDonutColors = ["#0f9f99", "#ea7b47", "#94a3b8"];
@@ -251,7 +256,7 @@ export default function ReportClient({ initialData }: Props) {
               <Line
                 type="monotone"
                 dataKey="members"
-                name="会員"
+                name="累計会員"
                 stroke="#0f9f99"
                 strokeWidth={3}
                 dot={{ r: 2 }}
@@ -269,7 +274,15 @@ export default function ReportClient({ initialData }: Props) {
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <div className="mt-3 grid grid-cols-2 gap-2 md:gap-3">
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 md:gap-3">
+          <article className="rounded-xl bg-[#2563eb] p-4 text-white shadow-sm">
+            <p className="text-sm font-semibold">新規顧客（直近30日）</p>
+            <p className="mt-2 flex items-end gap-1">
+              <span className="text-4xl font-bold leading-none">{newCustomersDisplay}</span>
+              <span className="pb-0.5 text-base font-semibold">人</span>
+            </p>
+            <p className="mt-2 text-xs text-blue-100">会員登録日を基準に集計</p>
+          </article>
           <article className="rounded-xl bg-[#0f9f99] p-4 text-white shadow-sm">
             <p className="text-sm font-semibold">来店会員</p>
             <p className="mt-2 flex items-end gap-1">

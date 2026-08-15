@@ -74,7 +74,11 @@ export async function PATCH(request: Request) {
     if (rankGiftSettings) {
       const requestedRankIds = new Set(rankGiftSettings.map((row) => row.rankId));
       const existingRankRows = await prisma.rank.findMany({
-        where: { id: { in: Array.from(requestedRankIds) } },
+        where: {
+          id: { in: Array.from(requestedRankIds) },
+          officialAccountId: adminUser.officialAccountId,
+          isActive: true,
+        },
         select: { id: true },
       });
       if (existingRankRows.length !== requestedRankIds.size) {

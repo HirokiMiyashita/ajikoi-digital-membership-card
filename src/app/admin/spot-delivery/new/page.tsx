@@ -1,5 +1,6 @@
 import { requireAdminUser } from "@/lib/admin-guard";
 import { prisma } from "@/lib/prisma";
+import { getStoreRanks } from "@/lib/store-ranks";
 import SpotDeliveryEditorClient from "./spot-delivery-editor-client";
 
 type GiftTemplateUrlRow = {
@@ -59,14 +60,7 @@ export default async function AdminSpotDeliveryNewPage() {
     prisma.user.count({
       where: { officialAccountId: adminUser.officialAccountId! },
     }),
-    prisma.rank.findMany({
-      orderBy: { minPoints: "asc" },
-      select: {
-        id: true,
-        name: true,
-      },
-      take: 50,
-    }),
+    getStoreRanks(adminUser.officialAccountId!),
   ]);
   const absoluteTemplateUrls = (templates as GiftTemplateUrlRow[])
     .map((row: GiftTemplateUrlRow) => row.imageUrl)

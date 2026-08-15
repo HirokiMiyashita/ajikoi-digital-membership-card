@@ -222,14 +222,20 @@ model UserGift {
 }
 
 model Rank {
-  id                          String                      @id
+  id                          String                      @id @default(cuid())
+  officialAccountId           String?
   name                        String
   minPoints                   Int
   maxPoints                   Int
+  sortOrder                   Int                         @default(0)
+  isActive                    Boolean                     @default(true)
+  officialAccount             OfficialAccount?            @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
   users                       User[]
   visitGachaRankProbabilities VisitGachaRankProbability[]
   rankBenefitGiftSettings     RankBenefitGiftSetting[]
 
+  @@unique([officialAccountId, sortOrder])
+  @@index([officialAccountId, minPoints])
   @@map("ranks")
 }
 
@@ -273,6 +279,7 @@ model OfficialAccount {
   lineDeliveryTriggerSettings      LineDeliveryTriggerSetting[]
   staffOperationPermissions        StaffStoreOperationPermission[]
   memberBenefitSettings            MemberBenefitSetting[]
+  ranks                            Rank[]
   storeStatus                      StoreStatus?
   businessHours                    StoreBusinessHour[]
   richMenu                         StoreRichMenu?

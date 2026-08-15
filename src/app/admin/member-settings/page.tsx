@@ -1,5 +1,6 @@
 import { requireAdminUser } from "@/lib/admin-guard";
 import { prisma } from "@/lib/prisma";
+import { getStoreRanks } from "@/lib/store-ranks";
 import MemberSettingsClient from "./member-settings-client";
 
 function toPreviewImageUrl(imageUrl: string) {
@@ -24,16 +25,7 @@ export default async function AdminMemberSettingsPage() {
       },
       take: 500,
     }),
-    prisma.rank.findMany({
-      orderBy: {
-        minPoints: "asc",
-      },
-      select: {
-        id: true,
-        name: true,
-        minPoints: true,
-      },
-    }),
+    getStoreRanks(adminUser.officialAccountId!),
     prisma.memberBenefitSetting.findUnique({
       where: { scopeKey },
       select: {

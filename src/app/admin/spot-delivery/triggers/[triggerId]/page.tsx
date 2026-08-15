@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/admin-guard";
 import { prisma } from "@/lib/prisma";
+import { getStoreRanks } from "@/lib/store-ranks";
 import TriggerDeliveryEditorClient from "../new/trigger-delivery-editor-client";
 
 type GiftTemplateUrlRow = {
@@ -82,14 +83,7 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
       },
       take: 100,
     }),
-    prisma.rank.findMany({
-      orderBy: { minPoints: "asc" },
-      select: {
-        id: true,
-        name: true,
-      },
-      take: 50,
-    }),
+    getStoreRanks(adminUser.officialAccountId!),
   ]);
   if (!trigger) {
     notFound();

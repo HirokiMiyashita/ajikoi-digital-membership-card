@@ -84,6 +84,8 @@ export async function POST(request: Request) {
     );
     const existingRankRows = await prisma.rank.findMany({
       where: {
+        officialAccountId: adminUser.officialAccountId,
+        isActive: true,
         id: {
           in: uniqueRankRows.map((row) => row.rankId),
         },

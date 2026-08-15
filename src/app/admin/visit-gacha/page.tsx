@@ -1,5 +1,6 @@
 import { requireAdminUser } from "@/lib/admin-guard";
 import { prisma } from "@/lib/prisma";
+import { getStoreRanks } from "@/lib/store-ranks";
 
 import VisitGachaClient from "./visit-gacha-client";
 
@@ -14,13 +15,7 @@ export default async function AdminVisitGachaPage() {
       select: { id: true, title: true },
       take: 200,
     }),
-    prisma.rank.findMany({
-      orderBy: { minPoints: "asc" },
-      select: {
-        id: true,
-        name: true,
-      },
-    }),
+    getStoreRanks(adminUser.officialAccountId!),
     prisma.visitGachaSetting.findUnique({
       where: { scopeKey },
       select: {

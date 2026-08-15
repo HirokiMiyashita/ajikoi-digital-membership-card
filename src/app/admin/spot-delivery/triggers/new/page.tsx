@@ -1,5 +1,6 @@
 import { requireAdminUser } from "@/lib/admin-guard";
 import { prisma } from "@/lib/prisma";
+import { getStoreRanks } from "@/lib/store-ranks";
 import TriggerDeliveryEditorClient from "./trigger-delivery-editor-client";
 
 type GiftTemplateUrlRow = {
@@ -55,14 +56,7 @@ export default async function AdminTriggerDeliveryNewPage() {
       },
       take: 100,
     }),
-    prisma.rank.findMany({
-      orderBy: { minPoints: "asc" },
-      select: {
-        id: true,
-        name: true,
-      },
-      take: 50,
-    }),
+    getStoreRanks(adminUser.officialAccountId!),
   ]);
   const absoluteTemplateUrls = (templates as GiftTemplateUrlRow[])
     .map((row: GiftTemplateUrlRow) => row.imageUrl)

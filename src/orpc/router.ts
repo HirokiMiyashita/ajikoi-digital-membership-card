@@ -15,6 +15,7 @@ import { getEffectiveStoreStatus } from "@/lib/business-hours";
 import { requireLiffUser } from "@/lib/liff-auth";
 import { prisma } from "@/lib/prisma";
 import { getStoreLineAccessToken } from "@/lib/store";
+import { getStoreRanks } from "@/lib/store-ranks";
 const prismaUnsafe = prisma as unknown as {
   onboardingSurveyQuestionSetting: {
     upsert: (args: unknown) => Promise<unknown>;
@@ -28,7 +29,6 @@ const prismaUnsafe = prisma as unknown as {
 
 const OFFICIAL_ACCOUNT_CACHE_TTL_MS = 5 * 60 * 1000;
 let officialAccountCache: { id: string | null; expiresAt: number } | null = null;
-const RANK_CACHE_TTL_MS = 5 * 60 * 1000;
 const SIGNUP_INITIAL_POINTS = 1;
 type GiftExpiryTypeValue = "DAYS_AFTER_ISSUE" | "FIXED_DATE";
 type LineDeliveryTriggerTypeValue =
@@ -45,7 +45,6 @@ type CachedRank = {
   minPoints: number;
   maxPoints: number;
 };
-let rankCache: { ranks: CachedRank[]; expiresAt: number } | null = null;
 
 type OnboardingSurveySettingRow = {
   id: string;
@@ -295,37 +294,12 @@ async function ensureOnboardingSurveySettings(officialAccountId: string | null) 
   }));
 }
 
-async function getCachedRanks() {
-  const now = Date.now();
-  if (rankCache && rankCache.expiresAt > now) {
-    return rankCache.ranks;
-  }
-
-  const rows = await prisma.rank.findMany({
-    select: {
-      id: true,
-      name: true,
-      minPoints: true,
-      maxPoints: true,
-    },
-    orderBy: {
-      minPoints: "asc",
-    },
-  });
-  const ranks = rows.map((row) => ({
-    ...row,
-    minPoints: Number(row.minPoints),
-    maxPoints: Number(row.maxPoints),
-  }));
-  rankCache = {
-    ranks,
-    expiresAt: now + RANK_CACHE_TTL_MS,
-  };
-  return ranks;
+async function getCachedRanks(officialAccountId: string) {
+  return getStoreRanks(officialAccountId);
 }
 
-async function resolveRankByPoints(points: number) {
-  const ranks = await getCachedRanks();
+async function resolveRankByPoints(officialAccountId: string, points: number) {
+  const ranks = await getCachedRanks(officialAccountId);
   const rank = ranks.find((candidate) => points >= candidate.minPoints && points <= candidate.maxPoints);
 
   if (!rank) {
@@ -335,8 +309,8 @@ async function resolveRankByPoints(points: number) {
   return rank;
 }
 
-async function resolveNextRankByPoints(points: number) {
-  const ranks = await getCachedRanks();
+async function resolveNextRankByPoints(officialAccountId: string, points: number) {
+  const ranks = await getCachedRanks(officialAccountId);
   const nextRank = ranks.find((candidate) => candidate.minPoints > points);
   return nextRank ?? null;
 }
@@ -880,6 +854,7 @@ async function runVisitGacha(userId: string, officialAccountId: string | null): 
 type MemberTrendRow = {
   day: Date;
   members: number;
+  newMembers: number;
 };
 
 type RepeaterTrendRow = {
@@ -1048,7 +1023,8 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     )
     SELECT
       d.day AS "day",
-      SUM(COALESCE(dnm.new_members, 0)) OVER (ORDER BY d.day)::int AS "members"
+      SUM(COALESCE(dnm.new_members, 0)) OVER (ORDER BY d.day)::int AS "members",
+      COALESCE(dnm.new_members, 0)::int AS "newMembers"
     FROM days d
     LEFT JOIN daily_new_members dnm ON dnm.day = d.day
     ORDER BY d.day ASC
@@ -1440,6 +1416,7 @@ function serializeAdminReportMetrics(metrics: AdminReportMetrics) {
     memberTrend: metrics.memberTrend.map((row) => ({
       day: row.day.toISOString(),
       members: row.members,
+      newMembers: row.newMembers,
     })),
     repeaterTrend: metrics.repeaterTrend.map((row) => ({
       day: row.day.toISOString(),
@@ -1503,11 +1480,11 @@ export const appRouter = {
           storeSlug: input.storeSlug,
         });
         const startedAt = Date.now();
-        const ranksPromise = getCachedRanks();
         const officialAccountId = await resolveOfficialAccountId(input.storeSlug);
         if (!officialAccountId) {
           throw new Error("店舗が見つかりません。");
         }
+        const ranksPromise = getCachedRanks(officialAccountId);
         const existingUser = await prisma.user.findUnique({
           where: { userId: input.userId },
           select: { officialAccountId: true },
@@ -1518,6 +1495,8 @@ export const appRouter = {
         ) {
           throw new Error("このLINEユーザーは別の店舗に登録されています。");
         }
+        const ranks = await ranksPromise;
+        const initialRank = findRankByPoints(ranks, SIGNUP_INITIAL_POINTS);
         const officialResolvedAt = Date.now();
         const upsertRows = await prisma.$queryRaw<UpsertedLiffUserRow[]>`
           WITH existed AS (
@@ -1532,6 +1511,7 @@ export const appRouter = {
               "displayName",
               "pictureUrl",
               "points",
+              "nextRank",
               "officialAccountId",
               "officialLinkedAt",
               "createdAt",
@@ -1542,6 +1522,7 @@ export const appRouter = {
               ${input.displayName},
               ${input.pictureUrl ?? null},
               ${SIGNUP_INITIAL_POINTS},
+              ${initialRank.id},
               ${officialAccountId},
               ${officialAccountId ? new Date() : null},
               NOW(),
@@ -1602,9 +1583,14 @@ export const appRouter = {
         }
         const upsertedAt = Date.now();
 
-        const ranks = await ranksPromise;
         const currentRank = findRankByPoints(ranks, user.points);
         const nextRank = findNextRankByPoints(ranks, user.points);
+        if (user.nextRank !== currentRank.id) {
+          await prisma.user.update({
+            where: { userId: user.userId },
+            data: { nextRank: currentRank.id },
+          });
+        }
         const rankedAt = Date.now();
         const checkedInToday = isCheckedInToday(user.lastCheckInAt);
         let signupGiftTitle: string | null = null;
@@ -2509,8 +2495,14 @@ export const appRouter = {
           if (!existingUser) {
             throw new Error("ユーザーが見つかりません。");
           }
-          const currentRank = await resolveRankByPoints(existingUser.points);
-          const nextRank = await resolveNextRankByPoints(existingUser.points);
+          const currentRank = await resolveRankByPoints(
+            visitUser.officialAccountId,
+            existingUser.points,
+          );
+          const nextRank = await resolveNextRankByPoints(
+            visitUser.officialAccountId,
+            existingUser.points,
+          );
           return {
             ok: true,
             points: existingUser.points,
@@ -2530,7 +2522,10 @@ export const appRouter = {
 
         const updatedUser = updatedUserRows[0];
 
-        const currentRank = await resolveRankByPoints(updatedUser.points);
+        const currentRank = await resolveRankByPoints(
+          visitUser.officialAccountId,
+          updatedUser.points,
+        );
         const rankUpOccurred = updatedUser.nextRank !== currentRank.id;
         if (rankUpOccurred) {
           await prisma.user.update({
@@ -2543,7 +2538,10 @@ export const appRouter = {
           });
         }
 
-        const nextRank = await resolveNextRankByPoints(updatedUser.points);
+        const nextRank = await resolveNextRankByPoints(
+          visitUser.officialAccountId,
+          updatedUser.points,
+        );
 
         const checkInCountRows = await prisma.$queryRaw<Array<{ count: number }>>`
           SELECT COUNT(*)::int AS "count"
@@ -2601,7 +2599,7 @@ export const appRouter = {
             }
           }
 
-          const cachedRanks = await getCachedRanks();
+          const cachedRanks = await getCachedRanks(visitUser.officialAccountId);
           const highestRank = cachedRanks[cachedRanks.length - 1];
           const shouldIssueTopLoopGift =
             highestRank &&

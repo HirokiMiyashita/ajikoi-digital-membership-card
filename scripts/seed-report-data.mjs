@@ -57,16 +57,38 @@ async function resolveOfficialAccountId() {
   return rows[0]?.id ?? null;
 }
 
-async function getDefaultRankId() {
-  const regular = await prisma.rank.findUnique({ where: { id: "regular" } });
-  if (regular) return regular.id;
-
-  const first = await prisma.rank.findFirst({
-    orderBy: { minPoints: "asc" },
+async function getDefaultRankId(officialAccountId) {
+  let first = await prisma.rank.findFirst({
+    where: { officialAccountId, isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { minPoints: "asc" }],
     select: { id: true },
   });
   if (!first) {
-    throw new Error("ranks テーブルが空です。先に migration を適用してください。");
+    const defaults = [
+      ["レギュラー", 0, 2],
+      ["シルバー", 3, 9],
+      ["ゴールド", 10, 29],
+      ["プラチナ", 30, 49],
+      ["ダイヤモンド", 50, 2147483647],
+    ];
+    for (let index = 0; index < defaults.length; index += 1) {
+      const [name, minPoints, maxPoints] = defaults[index];
+      await prisma.rank.create({
+        data: {
+          officialAccountId,
+          name,
+          minPoints,
+          maxPoints,
+          sortOrder: index,
+          isActive: true,
+        },
+      });
+    }
+    first = await prisma.rank.findFirstOrThrow({
+      where: { officialAccountId, isActive: true },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true },
+    });
   }
 
   return first.id;
@@ -78,7 +100,7 @@ async function main() {
     throw new Error("official_accounts の作成/取得に失敗しました。");
   }
 
-  const defaultRankId = await getDefaultRankId();
+  const defaultRankId = await getDefaultRankId(officialAccountId);
 
   const deleted = await prisma.user.deleteMany({
     where: {
