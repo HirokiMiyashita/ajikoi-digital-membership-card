@@ -122,6 +122,7 @@ async function main() {
       data: {
         userId,
         displayName: `テスト会員${String(i + 1).padStart(3, "0")}`,
+        isTest: true,
         points: visitCount,
         nextRank: defaultRankId,
         officialAccountId,

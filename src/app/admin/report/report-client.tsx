@@ -24,7 +24,7 @@ type ReportMetrics = {
   repeaterTrend: Array<{ day: string; repeaters: number }>;
   visitTrend: Array<{ day: string; newVisits: number; repeatVisits: number; totalVisits: number }>;
   repeaterSummary: {
-    members: number;
+    visitors: number;
     repeaters: number;
     repeatRate: number;
   };
@@ -121,7 +121,7 @@ export default function ReportClient({ initialData }: Props) {
   const repeaterTrend = data?.repeaterTrend ?? [];
   const visitTrend = useMemo(() => data?.visitTrend ?? [], [data]);
   const repeaterSummary = data?.repeaterSummary ?? {
-    members: 0,
+    visitors: 0,
     repeaters: 0,
     repeatRate: 0,
   };
@@ -221,7 +221,7 @@ export default function ReportClient({ initialData }: Props) {
       </div>
     );
   }
-  const membersDisplay = repeaterSummary.members.toLocaleString();
+  const visitorsDisplay = repeaterSummary.visitors.toLocaleString();
   const repeatersDisplay = repeaterSummary.repeaters.toLocaleString();
   const visitDonutColors = ["#0f9f99", "#ea7b47", "#f59e0b", "#818cf8", "#f472b6"];
   const ageDonutColors = ["#0f9f99", "#ea7b47", "#f59e0b", "#818cf8", "#f472b6", "#38bdf8", "#94a3b8"];
@@ -271,9 +271,9 @@ export default function ReportClient({ initialData }: Props) {
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 md:gap-3">
           <article className="rounded-xl bg-[#0f9f99] p-4 text-white shadow-sm">
-            <p className="text-sm font-semibold">会員</p>
+            <p className="text-sm font-semibold">来店会員</p>
             <p className="mt-2 flex items-end gap-1">
-              <span className="text-4xl font-bold leading-none">{membersDisplay}</span>
+              <span className="text-4xl font-bold leading-none">{visitorsDisplay}</span>
               <span className="pb-0.5 text-base font-semibold">人</span>
             </p>
           </article>
@@ -330,9 +330,9 @@ export default function ReportClient({ initialData }: Props) {
       </div>
 
       <div className="mx-auto w-[90%] space-y-2">
-        <h2 className="text-lg font-bold">来店数の推移（新規 / リピータ）</h2>
+        <h2 className="text-lg font-bold">来店数の推移（初回来店 / 2回目以降）</h2>
         <section className="rounded-xl border border-[#dbe2ea] bg-white p-4 shadow-sm">
-        <p className="mt-1 text-sm text-[#64748b]">2回目以降の来店をリピータとして集計</p>
+        <p className="mt-1 text-sm text-[#64748b]">会員登録日ではなく、チェックイン回数を基準に集計しています。</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-lg border border-[#dbe2ea] bg-[#f8fafc] p-1 text-sm">
             <button
@@ -371,7 +371,7 @@ export default function ReportClient({ initialData }: Props) {
               onChange={(event) => setShowNewVisits(event.target.checked)}
               className="h-4 w-4 rounded border-[#cbd5e1] text-[#0f9f99]"
             />
-            新規
+            初回来店
           </label>
           <label className="inline-flex items-center gap-2 text-sm text-[#334155]">
             <input
@@ -380,7 +380,7 @@ export default function ReportClient({ initialData }: Props) {
               onChange={(event) => setShowRepeatVisits(event.target.checked)}
               className="h-4 w-4 rounded border-[#cbd5e1] text-[#ea7b47]"
             />
-            リピータ
+            2回目以降
           </label>
         </div>
         <div className="mt-3 h-64 w-full">
@@ -391,10 +391,10 @@ export default function ReportClient({ initialData }: Props) {
               <YAxis tick={{ fill: "#64748b", fontSize: 12 }} tickLine={false} axisLine={false} />
               <Tooltip />
               {showNewVisits ? (
-                <Bar dataKey="newVisits" stackId="visits" name="新規" fill="#0f9f99" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="newVisits" stackId="visits" name="初回来店" fill="#0f9f99" radius={[4, 4, 0, 0]} />
               ) : null}
               {showRepeatVisits ? (
-                <Bar dataKey="repeatVisits" stackId="visits" name="リピート" fill="#ea7b47" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="repeatVisits" stackId="visits" name="2回目以降" fill="#ea7b47" radius={[4, 4, 0, 0]} />
               ) : null}
             </BarChart>
           </ResponsiveContainer>

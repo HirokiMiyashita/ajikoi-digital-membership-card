@@ -11,6 +11,8 @@ type StoreSettings = {
   liffId: string;
   lineAddFriendUrl: string;
   googleReviewUrl: string;
+  latitude: string;
+  longitude: string;
 };
 
 const themeColorPresets = [
@@ -38,6 +40,9 @@ export default function StoreSettingsForm({
   const [themeColor, setThemeColor] = useState(
     initialValues.themeColor || "#0f766e",
   );
+  const [latitude, setLatitude] = useState(initialValues.latitude);
+  const [longitude, setLongitude] = useState(initialValues.longitude);
+  const [isLocating, setIsLocating] = useState(false);
 
   const copyValue = async (label: string, value: string) => {
     if (!value) return;
@@ -69,6 +74,28 @@ export default function StoreSettingsForm({
   const previewThemeColor = /^#[0-9a-fA-F]{6}$/.test(themeColor)
     ? themeColor
     : "#0f766e";
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setMessage("このブラウザでは位置情報を取得できません。");
+      return;
+    }
+    setIsLocating(true);
+    setMessage(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLatitude(position.coords.latitude.toFixed(7));
+        setLongitude(position.coords.longitude.toFixed(7));
+        setIsLocating(false);
+        setMessage("現在地を入力しました。内容を確認して保存してください。");
+      },
+      () => {
+        setIsLocating(false);
+        setMessage("位置情報を取得できませんでした。ブラウザの許可設定を確認してください。");
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+    );
+  };
 
   return (
     <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-4 rounded-xl bg-white p-5 shadow-sm">
@@ -114,7 +141,54 @@ export default function StoreSettingsForm({
           </label>
         ))}
       </section>
+      <section className="space-y-3 rounded-xl border border-[#e2e8f0] p-4">
+        <div>
+          <h2 className="text-sm font-bold">チェックイン可能な店舗位置</h2>
+          <p className="mt-1 text-xs leading-relaxed text-[#64748b]">
+            この位置から150m以内のユーザーだけが来店チェックインできます。店舗内で現在地を取得してください。
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-semibold">
+            緯度
+            <input
+              name="latitude"
+              type="number"
+              min="-90"
+              max="90"
+              step="any"
+              value={latitude}
+              onChange={(event) => setLatitude(event.target.value)}
+              required
+              className="mt-1 w-full rounded-lg border border-[#cbd5e1] px-3 py-2 font-normal"
+            />
+          </label>
+          <label className="text-sm font-semibold">
+            経度
+            <input
+              name="longitude"
+              type="number"
+              min="-180"
+              max="180"
+              step="any"
+              value={longitude}
+              onChange={(event) => setLongitude(event.target.value)}
+              required
+              className="mt-1 w-full rounded-lg border border-[#cbd5e1] px-3 py-2 font-normal"
+            />
+          </label>
+        </div>
+        <button
+          type="button"
+          onClick={useCurrentLocation}
+          disabled={isLocating}
+          className="rounded-lg border border-[#0f766e] px-4 py-2 text-sm font-bold text-[#0f766e] disabled:opacity-50"
+        >
+          {isLocating ? "現在地を取得中..." : "現在地を店舗位置に設定"}
+        </button>
+      </section>
       {Object.entries(initialValues).map(([name, value]) => {
+        if (name === "latitude" || name === "longitude") return null;
         if (name === "themeColor") {
           return (
             <section key={name} className="space-y-3 rounded-xl border border-[#e2e8f0] p-4">

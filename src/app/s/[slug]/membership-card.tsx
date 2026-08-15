@@ -490,11 +490,30 @@ export default function MembershipCard({ store }: { store: PublicStoreProfile })
       setGachaStartPopup({ open: false, winProbability: 0, previewGift: null });
       setGachaPopup({ open: false, won: false, giftTitle: null, resultImageUrl: null });
       try {
-        setGachaJudgingLabel("ポイント付与中...");
+        setGachaJudgingLabel("現在地を確認中...");
         setIsGachaJudging(true);
+        if (!navigator.geolocation) {
+          throw new Error("この端末では位置情報を取得できないため、チェックインできません。");
+        }
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            resolve,
+            () =>
+              reject(
+                new Error(
+                  "位置情報を取得できませんでした。位置情報を許可し、店舗内でもう一度お試しください。",
+                ),
+              ),
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+          );
+        });
+        setGachaJudgingLabel("ポイント付与中...");
         const result = await rpcClient.user.addVisitPoint({
           userId: profile.userId,
           qrValue: checkinToken,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
         });
         setPoints(result.points);
         setCurrentRankName(result.currentRankName);

@@ -1,0 +1,3 @@
+ALTER TABLE "official_accounts"
+ADD COLUMN "latitude" DOUBLE PRECISION,
+ADD COLUMN "longitude" DOUBLE PRECISION;

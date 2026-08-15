@@ -13,6 +13,7 @@ model User {
   displayName               String
   pictureUrl                String?
   role                      UserRole?
+  isTest                    Boolean                         @default(false)
   points                    Int                             @default(0)
   nextRank                  String                          @default("regular")
   lastCheckInAt             DateTime?
@@ -32,6 +33,7 @@ model User {
   updatedAt                 DateTime                        @updatedAt
 
   @@index([officialAccountId, createdAt])
+  @@index([officialAccountId, isTest, role])
   @@map("users")
 }
 
@@ -258,6 +260,8 @@ model OfficialAccount {
   lineChannelAccessToken           String?                           @db.Text
   visitQrToken                     String?
   googleReviewUrl                  String?
+  latitude                         Float?
+  longitude                        Float?
   onboardingCompletedAt            DateTime?
   users                            User[]
   adminUsers                       AdminUser[]

@@ -32,6 +32,8 @@ export default async function StoreSettingsPage() {
           liffId: store.liffId ?? "",
           lineAddFriendUrl: store.lineAddFriendUrl ?? "",
           googleReviewUrl: store.googleReviewUrl ?? "",
+          latitude: store.latitude?.toString() ?? "",
+          longitude: store.longitude?.toString() ?? "",
         }}
         liffEndpointUrl={memberUrl}
         richMenuUrl={richMenuUrl}

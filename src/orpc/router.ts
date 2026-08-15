@@ -76,6 +76,26 @@ function matchesVisitQrToken(qrValue: string, expectedToken: string) {
   }
 }
 
+const CHECKIN_RADIUS_METERS = 150;
+
+function distanceInMeters(
+  latitudeA: number,
+  longitudeA: number,
+  latitudeB: number,
+  longitudeB: number,
+) {
+  const earthRadiusMeters = 6_371_000;
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const latitudeDelta = toRadians(latitudeB - latitudeA);
+  const longitudeDelta = toRadians(longitudeB - longitudeA);
+  const a =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(toRadians(latitudeA)) *
+      Math.cos(toRadians(latitudeB)) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 function getStartOfTodayInJstUtc() {
   const jstOffsetMs = 9 * 60 * 60 * 1000;
   const nowMs = Date.now();
@@ -875,7 +895,7 @@ type VisitTrendRow = {
 };
 
 type VisitStatsRow = {
-  members: number;
+  visitors: number;
   repeaters: number;
   repeatRate: number;
   visit1: number;
@@ -993,25 +1013,36 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
   const officialAccountFilterCheckins = officialAccountId
     ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}`
     : Prisma.empty;
+  const reportableUserFilter =
+    process.env.NODE_ENV === "development"
+      ? Prisma.sql`AND u."role" IS NULL`
+      : Prisma.sql`
+          AND u."role" IS NULL
+          AND u."isTest" = false
+        `;
 
   const memberTrendPromise = measure("memberTrend", () => prisma.$queryRaw<MemberTrendRow[]>`
     WITH daily_new_members AS (
       SELECT
-        u."createdAt"::date AS day,
+        (u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')::date AS day,
         COUNT(*)::int AS new_members
       FROM "users" u
       WHERE 1 = 1
       ${officialAccountFilterUsers}
-      GROUP BY u."createdAt"::date
+      ${reportableUserFilter}
+      GROUP BY (u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')::date
     ),
     bounds AS (
-      SELECT COALESCE(MIN(day), CURRENT_DATE) AS start_day
+      SELECT COALESCE(
+        MIN(day),
+        (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date
+      ) AS start_day
       FROM daily_new_members
     ),
     days AS (
       SELECT generate_series(
         (SELECT start_day FROM bounds),
-        CURRENT_DATE::date,
+        (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date,
         INTERVAL '1 day'
       )::date AS day
     )
@@ -1026,23 +1057,28 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
   const visitTrendPromise = measure("visitTrend", () => prisma.$queryRaw<VisitTrendRow[]>`
     WITH daily_visits AS (
       SELECT
-        c."checkedInAt"::date AS day,
+        (c."checkedInAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')::date AS day,
         SUM(CASE WHEN c."isFirstVisit" THEN 1 ELSE 0 END)::int AS "newVisits",
         SUM(CASE WHEN c."isRepeatVisit" THEN 1 ELSE 0 END)::int AS "repeatVisits",
         COUNT(*)::int AS "totalVisits"
       FROM "user_checkins" c
+      JOIN "users" u ON u."userId" = c."userId"
       WHERE 1 = 1
       ${officialAccountFilterCheckins}
-      GROUP BY c."checkedInAt"::date
+      ${reportableUserFilter}
+      GROUP BY (c."checkedInAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')::date
     ),
     bounds AS (
-      SELECT COALESCE(MIN(day), CURRENT_DATE) AS start_day
+      SELECT COALESCE(
+        MIN(day),
+        (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date
+      ) AS start_day
       FROM daily_visits
     ),
     days AS (
       SELECT generate_series(
         (SELECT start_day FROM bounds),
-        CURRENT_DATE::date,
+        (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date,
         INTERVAL '1 day'
       )::date AS day
     )
@@ -1058,15 +1094,18 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
 
   const repeaterTrendPromise = measure("repeaterTrend", () => prisma.$queryRaw<RepeaterTrendRow[]>`
     WITH eligible_users AS (
-      SELECT u."userId", u."createdAt"::date AS created_day
+      SELECT
+        u."userId",
+        (u."createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')::date AS created_day
       FROM "users" u
       WHERE 1 = 1
       ${officialAccountFilterUsers}
+      ${reportableUserFilter}
     ),
     second_visits AS (
       SELECT
         ranked."userId",
-        ranked."checkedInAt"::date AS second_day
+        (ranked."checkedInAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Tokyo')::date AS second_day
       FROM (
         SELECT
           c."userId",
@@ -1085,13 +1124,16 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
       GROUP BY sv.second_day
     ),
     bounds AS (
-      SELECT COALESCE(MIN(eu.created_day), CURRENT_DATE) AS start_day
+      SELECT COALESCE(
+        MIN(eu.created_day),
+        (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date
+      ) AS start_day
       FROM eligible_users eu
     ),
     days AS (
       SELECT generate_series(
         (SELECT start_day FROM bounds),
-        CURRENT_DATE::date,
+        (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date,
         INTERVAL '1 day'
       )::date AS day
     )
@@ -1114,15 +1156,16 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
         ${officialAccountId ? Prisma.sql`AND c."officialAccountId" = ${officialAccountId}` : Prisma.empty}
       WHERE 1 = 1
       ${officialAccountFilterUsers}
+      ${reportableUserFilter}
       GROUP BY u."userId"
     )
     SELECT
-      COUNT(*)::int AS "members",
+      COUNT(*) FILTER (WHERE visits >= 1)::int AS "visitors",
       COUNT(*) FILTER (WHERE visits >= 2)::int AS "repeaters",
       COALESCE(
         ROUND(
           (COUNT(*) FILTER (WHERE visits >= 2))::numeric
-          / NULLIF(COUNT(*), 0)::numeric * 100,
+          / NULLIF(COUNT(*) FILTER (WHERE visits >= 1), 0)::numeric * 100,
           2
         ),
         0
@@ -1139,18 +1182,19 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     WITH surveyed AS (
       SELECT
         CASE
-          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 10 AND 19 THEN '10代'
-          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 20 AND 29 THEN '20代'
-          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 30 AND 39 THEN '30代'
-          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 40 AND 49 THEN '40代'
-          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) BETWEEN 50 AND 59 THEN '50代'
-          WHEN DATE_PART('year', AGE(CURRENT_DATE, s."birthDate")) >= 60 THEN '60代〜'
+          WHEN DATE_PART('year', AGE((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date, s."birthDate")) BETWEEN 10 AND 19 THEN '10代'
+          WHEN DATE_PART('year', AGE((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date, s."birthDate")) BETWEEN 20 AND 29 THEN '20代'
+          WHEN DATE_PART('year', AGE((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date, s."birthDate")) BETWEEN 30 AND 39 THEN '30代'
+          WHEN DATE_PART('year', AGE((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date, s."birthDate")) BETWEEN 40 AND 49 THEN '40代'
+          WHEN DATE_PART('year', AGE((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date, s."birthDate")) BETWEEN 50 AND 59 THEN '50代'
+          WHEN DATE_PART('year', AGE((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Tokyo')::date, s."birthDate")) >= 60 THEN '60代〜'
           ELSE 'その他'
         END AS age_band
       FROM "users" u
       JOIN "user_surveys" s ON s."id" = u."surveyId"
       WHERE 1 = 1
       ${officialAccountFilterUsers}
+      ${reportableUserFilter}
     )
     SELECT * FROM (
       SELECT '10代'::text AS "label", COUNT(*) FILTER (WHERE age_band = '10代')::int AS "count", 1::int AS "sortOrder" FROM surveyed
@@ -1182,6 +1226,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
       JOIN "user_surveys" s ON s."id" = u."surveyId"
       WHERE 1 = 1
       ${officialAccountFilterUsers}
+      ${reportableUserFilter}
     )
     SELECT * FROM (
       SELECT '女性'::text AS "label", COUNT(*) FILTER (WHERE gender_label = '女性')::int AS "count", 1::int AS "sortOrder" FROM surveyed
@@ -1197,8 +1242,10 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     WITH first_checkins AS (
       SELECT c."userId", MIN(c."checkedInAt") AS first_at
       FROM "user_checkins" c
+      JOIN "users" u ON u."userId" = c."userId"
       WHERE 1 = 1
       ${officialAccountFilterCheckins}
+      ${reportableUserFilter}
       GROUP BY c."userId"
     ),
     revisit_users AS (
@@ -1288,7 +1335,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
   }
 
   const visitStats = visitStatsRows[0] ?? {
-    members: 0,
+    visitors: 0,
     repeaters: 0,
     repeatRate: 0,
     visit1: 0,
@@ -1310,7 +1357,7 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
     repeaterTrend,
     visitTrend,
     repeaterSummary: {
-      members: visitStats.members,
+      visitors: visitStats.visitors,
       repeaters: visitStats.repeaters,
       repeatRate: visitStats.repeatRate,
     },
@@ -2353,6 +2400,9 @@ export const appRouter = {
         z.object({
           userId: z.string().min(1),
           qrValue: z.string().min(1),
+          latitude: z.number().min(-90).max(90),
+          longitude: z.number().min(-180).max(180),
+          accuracy: z.number().nonnegative().max(10_000),
         }),
       )
       .handler(async ({ input, context }) => {
@@ -2361,7 +2411,11 @@ export const appRouter = {
           where: { userId: input.userId },
           select: {
             officialAccount: {
-              select: { visitQrToken: true },
+              select: {
+                visitQrToken: true,
+                latitude: true,
+                longitude: true,
+              },
             },
             officialAccountId: true,
           },
@@ -2372,6 +2426,21 @@ export const appRouter = {
         if (!visitUser.officialAccountId) {
           throw new Error("ユーザーの店舗情報が見つかりません。");
         }
+        const storeLatitude = visitUser.officialAccount?.latitude;
+        const storeLongitude = visitUser.officialAccount?.longitude;
+        if (storeLatitude === null || storeLatitude === undefined ||
+            storeLongitude === null || storeLongitude === undefined) {
+          throw new Error("店舗位置が未設定です。店舗スタッフへお知らせください。");
+        }
+        const distance = distanceInMeters(
+          storeLatitude,
+          storeLongitude,
+          input.latitude,
+          input.longitude,
+        );
+        if (distance > CHECKIN_RADIUS_METERS) {
+          throw new Error("店舗から離れているためチェックインできません。店舗内でお試しください。");
+        }
         const expectedQrToken = visitUser.officialAccount?.visitQrToken;
         if (!expectedQrToken || !matchesVisitQrToken(input.qrValue.trim(), expectedQrToken)) {
           throw new Error("無効なQRコードです。");
@@ -2380,15 +2449,58 @@ export const appRouter = {
         const startOfTodayInJstUtc = getStartOfTodayInJstUtc();
         const now = new Date();
 
-        const updatedCount = await prisma.$executeRaw`
-          UPDATE "users"
-          SET "points" = "points" + 1,
-              "lastCheckInAt" = ${now}
-          WHERE "userId" = ${input.userId}
-            AND ("lastCheckInAt" IS NULL OR "lastCheckInAt" < ${startOfTodayInJstUtc})
+        const updatedUserRows = await prisma.$queryRaw<
+          Array<{
+            userId: string;
+            points: number;
+            nextRank: string;
+            createdAt: Date;
+            isFirstVisit: boolean;
+          }>
+        >`
+          WITH updated AS (
+            UPDATE "users"
+            SET "points" = "points" + 1,
+                "lastCheckInAt" = ${now}
+            WHERE "userId" = ${input.userId}
+              AND ("lastCheckInAt" IS NULL OR "lastCheckInAt" < ${startOfTodayInJstUtc})
+            RETURNING "userId", "points", "nextRank", "createdAt"
+          ),
+          visit_state AS (
+            SELECT
+              u.*,
+              NOT EXISTS (
+                SELECT 1
+                FROM "user_checkins" c
+                WHERE c."userId" = u."userId"
+              ) AS "isFirstVisit"
+            FROM updated u
+          ),
+          inserted AS (
+            INSERT INTO "user_checkins"
+              ("id", "userId", "checkedInAt", "isFirstVisit", "isRepeatVisit", "officialAccountId", "createdAt")
+            SELECT
+              md5(random()::text || clock_timestamp()::text),
+              v."userId",
+              ${now},
+              v."isFirstVisit",
+              NOT v."isFirstVisit",
+              ${visitUser.officialAccountId},
+              NOW()
+            FROM visit_state v
+            RETURNING "userId"
+          )
+          SELECT
+            v."userId",
+            v."points",
+            v."nextRank",
+            v."createdAt",
+            v."isFirstVisit"
+          FROM visit_state v
+          JOIN inserted i ON i."userId" = v."userId"
         `;
 
-        if (Number(updatedCount) === 0) {
+        if (updatedUserRows.length === 0) {
           const existingUser = await prisma.user.findUnique({
             where: {
               userId: input.userId,
@@ -2416,21 +2528,7 @@ export const appRouter = {
           };
         }
 
-        const updatedUser = await prisma.user.findUnique({
-          where: {
-            userId: input.userId,
-          },
-          select: {
-            userId: true,
-            points: true,
-            nextRank: true,
-            createdAt: true,
-          },
-        });
-
-        if (!updatedUser) {
-          throw new Error("ユーザーが見つかりません。");
-        }
+        const updatedUser = updatedUserRows[0];
 
         const currentRank = await resolveRankByPoints(updatedUser.points);
         const rankUpOccurred = updatedUser.nextRank !== currentRank.id;
@@ -2452,31 +2550,8 @@ export const appRouter = {
           FROM "user_checkins"
           WHERE "userId" = ${updatedUser.userId}
         `;
-        const checkInCount = checkInCountRows[0]?.count ?? 0;
-        const nextCheckInCount = checkInCount + 1;
-        const isFirstVisit = checkInCount === 0;
-        const userOfficialRows = await prisma.$queryRaw<Array<{ officialAccountId: string | null }>>`
-          SELECT "officialAccountId"
-          FROM "users"
-          WHERE "userId" = ${updatedUser.userId}
-          LIMIT 1
-        `;
-        const officialAccountId = userOfficialRows[0]?.officialAccountId ?? (await resolveOfficialAccountId());
-
-        await prisma.$executeRaw`
-          INSERT INTO "user_checkins"
-            ("id", "userId", "checkedInAt", "isFirstVisit", "isRepeatVisit", "officialAccountId", "createdAt")
-          VALUES
-            (
-              md5(random()::text || clock_timestamp()::text),
-              ${updatedUser.userId},
-              ${now},
-              ${isFirstVisit},
-              ${!isFirstVisit},
-              ${officialAccountId},
-              NOW()
-            )
-        `;
+        const nextCheckInCount = checkInCountRows[0]?.count ?? 1;
+        const officialAccountId = visitUser.officialAccountId;
 
         await prisma.$executeRaw`
           INSERT INTO "user_history"
@@ -2490,6 +2565,12 @@ export const appRouter = {
               'checkin_point_granted',
               ${JSON.stringify({
                 qrValue: input.qrValue,
+                location: {
+                  latitude: input.latitude,
+                  longitude: input.longitude,
+                  accuracy: input.accuracy,
+                  distanceFromStoreMeters: Math.round(distance),
+                },
                 pointsAfter: updatedUser.points,
                 currentRankName: currentRank.name,
               })}::jsonb,
