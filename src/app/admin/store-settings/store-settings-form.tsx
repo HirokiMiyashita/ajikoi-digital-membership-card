@@ -13,6 +13,15 @@ type StoreSettings = {
   googleReviewUrl: string;
 };
 
+const themeColorPresets = [
+  { color: "#0f766e", label: "ティール" },
+  { color: "#2563eb", label: "ブルー" },
+  { color: "#7c3aed", label: "パープル" },
+  { color: "#db2777", label: "ピンク" },
+  { color: "#dc2626", label: "レッド" },
+  { color: "#ea580c", label: "オレンジ" },
+];
+
 export default function StoreSettingsForm({
   initialValues,
   liffEndpointUrl,
@@ -26,6 +35,9 @@ export default function StoreSettingsForm({
   const [message, setMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
+  const [themeColor, setThemeColor] = useState(
+    initialValues.themeColor || "#0f766e",
+  );
 
   const copyValue = async (label: string, value: string) => {
     if (!value) return;
@@ -54,9 +66,12 @@ export default function StoreSettingsForm({
     }
     setIsSubmitting(false);
   };
+  const previewThemeColor = /^#[0-9a-fA-F]{6}$/.test(themeColor)
+    ? themeColor
+    : "#0f766e";
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-2xl space-y-4 rounded-xl bg-white p-5 shadow-sm">
+    <form onSubmit={handleSubmit} className="mx-auto max-w-2xl space-y-4 rounded-xl bg-white p-5 shadow-sm">
       <section className="space-y-3 rounded-xl border border-[#ccfbf1] bg-[#f0fdfa] p-4">
         <div>
           <h2 className="text-sm font-bold text-[#115e59]">LINE側に登録するURL</h2>
@@ -99,28 +114,111 @@ export default function StoreSettingsForm({
           </label>
         ))}
       </section>
-      {Object.entries(initialValues).map(([name, value]) => (
-        <label key={name} className="block">
-          <span className="mb-1 block text-sm font-semibold">
-            {{
-              name: "店舗名",
-              displayName: "会員証の表示名",
-              logoUrl: "ロゴ画像URL",
-              themeColor: "テーマカラー",
-              liffId: "LIFF ID",
-              lineAddFriendUrl: "LINE友だち追加URL",
-              googleReviewUrl: "Google口コミURL",
-            }[name]}
-          </span>
-          <input
-            name={name}
-            type={name === "themeColor" ? "color" : "text"}
-            defaultValue={value}
-            required={name === "name" || name === "displayName"}
-            className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2"
-          />
-        </label>
-      ))}
+      {Object.entries(initialValues).map(([name, value]) => {
+        if (name === "themeColor") {
+          return (
+            <section key={name} className="space-y-3 rounded-xl border border-[#e2e8f0] p-4">
+              <div>
+                <h2 className="text-sm font-bold">会員証のメインカラー</h2>
+                <p className="mt-1 text-xs leading-relaxed text-[#64748b]">
+                  会員証上部、アンケートの進捗・選択状態・ボタンに反映されます。
+                </p>
+              </div>
+
+              <div
+                className="rounded-xl px-4 py-5 text-white shadow-sm transition-colors"
+                style={{ backgroundColor: previewThemeColor }}
+              >
+                <p className="text-xs font-semibold text-white/75">MEMBERSHIP CARD</p>
+                <p className="mt-4 text-lg font-bold">
+                  {initialValues.displayName || initialValues.name || "店舗名"}
+                </p>
+                <p className="mt-1 text-xs text-white/80">会員証の表示イメージ</p>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-semibold text-[#475569]">おすすめカラー</p>
+                <div className="flex flex-wrap gap-2">
+                  {themeColorPresets.map((preset) => {
+                    const isSelected =
+                      preset.color.toLowerCase() === previewThemeColor.toLowerCase();
+                    return (
+                      <button
+                        key={preset.color}
+                        type="button"
+                        aria-label={`${preset.label}を選択`}
+                        title={preset.label}
+                        onClick={() => setThemeColor(preset.color)}
+                        className={`size-9 rounded-full border-2 shadow-sm transition ${
+                          isSelected
+                            ? "scale-110 border-[#0f172a]"
+                            : "border-white ring-1 ring-[#cbd5e1]"
+                        }`}
+                        style={{ backgroundColor: preset.color }}
+                      >
+                        <span className="sr-only">{preset.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <label className="relative flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#cbd5e1] bg-white px-4 py-2 text-sm font-bold text-[#334155]">
+                  <span
+                    className="size-5 rounded-full border border-black/10"
+                    style={{ backgroundColor: previewThemeColor }}
+                    aria-hidden="true"
+                  />
+                  色を変更
+                  <input
+                    type="color"
+                    value={previewThemeColor}
+                    onChange={(event) => setThemeColor(event.target.value)}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                    aria-label="カラーピッカーを開く"
+                  />
+                </label>
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-[#cbd5e1] bg-white px-3">
+                  <span className="text-sm font-semibold text-[#64748b]">HEX</span>
+                  <input
+                    name="themeColor"
+                    type="text"
+                    value={themeColor}
+                    onChange={(event) => setThemeColor(event.target.value)}
+                    pattern="^#[0-9A-Fa-f]{6}$"
+                    required
+                    className="min-w-0 flex-1 py-2 text-sm font-semibold uppercase outline-none"
+                    aria-label="テーマカラーのHEX値"
+                  />
+                </label>
+              </div>
+            </section>
+          );
+        }
+
+        return (
+          <label key={name} className="block">
+            <span className="mb-1 block text-sm font-semibold">
+              {{
+                name: "店舗名",
+                displayName: "会員証の表示名",
+                logoUrl: "ロゴ画像URL",
+                liffId: "LIFF ID",
+                lineAddFriendUrl: "LINE友だち追加URL",
+                googleReviewUrl: "Google口コミURL",
+              }[name]}
+            </span>
+            <input
+              name={name}
+              type="text"
+              defaultValue={value}
+              required={name === "name" || name === "displayName"}
+              className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2"
+            />
+          </label>
+        );
+      })}
       <label className="block">
         <span className="mb-1 block text-sm font-semibold">LINE Channel Access Token</span>
         <input

@@ -19,7 +19,7 @@ export default async function StoreSettingsPage() {
 
   return (
     <div className="space-y-4 p-4">
-      <div>
+      <div className="mx-auto max-w-2xl">
         <h1 className="text-xl font-bold">店舗設定</h1>
         <p className="text-sm text-[#64748b]">会員証のブランド表示とLINE連携を管理します。</p>
       </div>
