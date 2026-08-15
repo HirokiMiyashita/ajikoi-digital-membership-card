@@ -36,7 +36,7 @@ type RouteContext = {
 
 export async function PATCH(request: Request, context: RouteContext) {
   try {
-    await requireAdminUser();
+    const admin = await requireAdminUser();
     const { giftId } = await context.params;
     const body = await request.json();
     const parsed = updateGiftSchema.safeParse(body);
@@ -52,8 +52,8 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const { title, usageGuide, expiryType, expiryDays, expiryAt, imagePath } = parsed.data;
 
-    const existingGift = await prisma.gift.findUnique({
-      where: { id: giftId },
+    const existingGift = await prisma.gift.findFirst({
+      where: { id: giftId, officialAccountId: admin.officialAccountId! },
       select: { id: true },
     });
     if (!existingGift) {

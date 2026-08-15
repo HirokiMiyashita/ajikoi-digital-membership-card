@@ -47,7 +47,7 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
     prisma.lineDeliveryTriggerSetting.findFirst({
       where: {
         id: triggerId,
-        ...(adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : {}),
+        officialAccountId: adminUser.officialAccountId!,
       },
       select: {
         id: true,
@@ -65,6 +65,7 @@ export default async function AdminTriggerDeliveryEditPage({ params }: Props) {
       },
     }),
     prisma.gift.findMany({
+      where: { officialAccountId: adminUser.officialAccountId! },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,

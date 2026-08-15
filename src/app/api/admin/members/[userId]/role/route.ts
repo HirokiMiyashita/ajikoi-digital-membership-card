@@ -28,7 +28,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       where: { id: adminId },
       select: { officialAccountId: true },
     });
-    if (!adminUser) {
+    if (!adminUser?.officialAccountId) {
       return NextResponse.json({ ok: false, message: "管理者情報が見つかりません。" }, { status: 403 });
     }
 
@@ -48,9 +48,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const targetUser = await prisma.user.findFirst({
       where: {
         userId,
-        ...(adminUser.officialAccountId
-          ? { officialAccountId: adminUser.officialAccountId }
-          : {}),
+        officialAccountId: adminUser.officialAccountId,
       },
       select: { userId: true },
     });
@@ -58,16 +56,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ ok: false, message: "対象ユーザーが見つかりません。" }, { status: 404 });
     }
 
-    const { role, officialAccountId } = parsed.data;
-    if (role === "staff" && !officialAccountId) {
-      return NextResponse.json(
-        { ok: false, message: "スタッフ担当の公式アカウントを選択してください。" },
-        { status: 400 },
-      );
-    }
+    const { role } = parsed.data;
 
-    const selectableOfficialAccountId =
-      adminUser.officialAccountId ?? officialAccountId ?? null;
+    const selectableOfficialAccountId = adminUser.officialAccountId;
     if (role === "staff") {
       if (!selectableOfficialAccountId) {
         return NextResponse.json(
@@ -76,9 +67,7 @@ export async function PATCH(request: Request, context: RouteContext) {
         );
       }
       const targetOfficialAccount = await prisma.officialAccount.findFirst({
-        where: adminUser.officialAccountId
-          ? { id: adminUser.officialAccountId }
-          : { id: selectableOfficialAccountId },
+        where: { id: adminUser.officialAccountId },
         select: { id: true },
       });
       if (!targetOfficialAccount) {

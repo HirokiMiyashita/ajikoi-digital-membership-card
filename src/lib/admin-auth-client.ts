@@ -1,8 +1,9 @@
 "use client";
 
-import { createAuthClient } from "better-auth/client";
-import { usernameClient } from "better-auth/client/plugins";
+import { createClient } from "@/lib/supabase/client";
 
-export const adminAuthClient = createAuthClient({
-  plugins: [usernameClient()],
-});
+export const adminAuthClient = {
+  async signOut() {
+    return createClient().auth.signOut();
+  },
+};

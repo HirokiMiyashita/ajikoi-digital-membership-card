@@ -10,11 +10,11 @@ type Props = {
 };
 
 export default async function AdminGiftEditPage({ params }: Props) {
-  await requireAdminUser();
+  const admin = await requireAdminUser();
   const { giftId } = await params;
 
-  const gift = await prisma.gift.findUnique({
-    where: { id: giftId },
+  const gift = await prisma.gift.findFirst({
+    where: { id: giftId, officialAccountId: admin.officialAccountId! },
     select: {
       id: true,
       title: true,

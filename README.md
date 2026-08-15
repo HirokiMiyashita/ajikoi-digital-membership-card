@@ -1,98 +1,51 @@
-# Ajikoi Digital Membership Card (LIFF Starter)
+# Digital Membership Card SaaS
 
-This project is a Next.js starter for a LIFF app.
+LINE LIFFと連携する、複数店舗対応のデジタル会員証です。店舗管理者はSupabase Authで登録し、1アカウントにつき1店舗を管理します。
 
-## 1) Setup
-
-Create your local env file:
-
-```bash
-cp .env.example .env.local
-```
-
-Then set your LIFF ID in `.env.local`:
-
-```bash
-NEXT_PUBLIC_LIFF_ID=YOUR_LIFF_ID_HERE
-NEXT_PUBLIC_LINE_ADD_FRIEND_URL=https://lin.ee/xxxxxxxx
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/ajikoi_local?schema=public"
-DIRECT_URL="postgresql://postgres:postgres@localhost:5432/ajikoi_local?schema=public"
-```
-
-For production Supabase, point `DATABASE_URL`/`DIRECT_URL` to your Supabase Postgres URLs.
-
-## 2) Run locally
+## ローカルセットアップ
 
 ```bash
 npm install
 npm run db:up
-npm run prisma:migrate -- --name init_users
+npm run db:migrate:local
+cp .env.example .env.local
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+ローカルではSupabase CLIがAuth・Postgres・Storage・Studio・メール受信環境を起動します。
 
-If needed, inspect local DB with:
+- API: `http://127.0.0.1:55321`
+- Database: `127.0.0.1:55322`
+- Studio: `http://127.0.0.1:55323`
+- Mailpit: `http://127.0.0.1:55324`
 
-```bash
-npm run prisma:studio
-```
+現在の接続情報は `npm run supabase:status -- -o env` で確認できます。
+停止は `npm run db:down`、DBを作り直す場合は `npm run db:reset` を使用してください。
 
-## Local migration flow
+## 店舗登録フロー
 
-When you change `prisma/schema.prisma`, run:
+1. `/admin/signup` で管理者アカウントを作成
+2. 確認メール経由でSupabase Authのセッションを開始
+3. `/admin/onboarding` で店舗名・URL slug・LINE設定を登録
+4. `/admin/store-settings` でブランドやLINE設定を変更
+5. 会員証は `/s/{店舗slug}` で公開
 
-```bash
-npm run prisma:migrate -- --name your_migration_name
-```
+LIFF endpoint URLは店舗ごとに `https://YOUR_DOMAIN/s/{店舗slug}` を設定してください。
 
-`prisma migrate dev` automatically runs `prisma generate`, so an extra generate is usually not required.
-
-If you only pulled latest migrations and want to refresh the client manually, run:
-
-```bash
-npm run prisma:generate
-```
-
-## 3) Deploy to Vercel
-
-Deploy this project to Vercel and copy the production URL:
-
-- Example: `https://ajikoi-digital-membership-card.vercel.app`
-
-Set that URL (or a specific path like `/`) as the LIFF endpoint URL in LINE Developers.
-
-## 4) LIFF settings checklist
-
-- LIFF endpoint URL: `https://...` (HTTPS required)
-- Scope: `openid` and `profile` are required for profile access
-- Use the generated LIFF ID in `NEXT_PUBLIC_LIFF_ID`
-- Set your OA add-friend URL in `NEXT_PUBLIC_LINE_ADD_FRIEND_URL` (e.g. `https://lin.ee/...`)
-
-## 5) oRPC API
-
-oRPC is configured at:
-
-- `src/orpc/router.ts` (procedure definitions)
-- `src/app/api/rpc/[...rest]/route.ts` (Next.js route handler)
-
-Current sample procedures:
-
-- `system.health`
-- `system.greet`
-- `user.upsertFromLiff` (upsert `userId` and `displayName` to `users` table)
-
-## GitHub Actions (production migration)
-
-Workflow file: `.github/workflows/prisma-migrate-deploy.yml`
-
-Set these repository secrets before using it:
-
-- `DATABASE_URL`
-- `DIRECT_URL`
-
-On push to `main` (when Prisma files changed), the workflow runs:
+## DBマイグレーション
 
 ```bash
-npx prisma migrate deploy
+npm run db:migrate:local
+npx prisma generate
 ```
+
+本番ではGitHub Actionsの `.github/workflows/prisma-migrate-deploy.yml` が
+`npx prisma migrate deploy` を実行します。`DATABASE_URL` と `DIRECT_URL` をRepository Secretsに設定してください。
+
+## 主な構成
+
+- `src/app/s/[slug]`: 店舗別の会員証
+- `src/app/admin`: 店舗管理画面
+- `src/lib/supabase`: Supabase Authクライアント
+- `src/orpc/router.ts`: 会員機能API
+- `prisma/schema.prisma`: 店舗テナントを含むデータモデル

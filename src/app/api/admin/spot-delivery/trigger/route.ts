@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       where: { id: adminId },
       select: { id: true, officialAccountId: true },
     });
-    if (!adminUser) {
+    if (!adminUser?.officialAccountId) {
       return Response.json({ ok: false, message: "管理者権限がありません。" }, { status: 403 });
     }
 
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 
     const users = await prisma.user.findMany({
       where: {
-        ...(adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : {}),
+        officialAccountId: adminUser.officialAccountId,
         ...(targetFilters.rankIds.length > 0 ? { nextRank: { in: targetFilters.rankIds } } : {}),
         ...(targetFilters.gender ? { survey: { is: { gender: targetFilters.gender } } } : {}),
       },
@@ -119,7 +119,7 @@ export async function POST(request: Request) {
         title,
         notificationText,
         messages,
-        officialAccountId: adminUser.officialAccountId ?? null,
+        officialAccountId: adminUser.officialAccountId,
         targetUserIds,
         triggeredBy: adminUser.id,
       },

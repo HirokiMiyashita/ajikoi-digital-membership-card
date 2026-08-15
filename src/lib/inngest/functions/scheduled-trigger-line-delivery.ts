@@ -68,6 +68,9 @@ export const scheduledTriggerLineDelivery = inngest.createFunction(
     );
 
     for (const setting of settings) {
+      if (!setting.officialAccountId) {
+        continue;
+      }
       if (!isValidSendHour(setting.deliveryHourJst, currentJstHour)) {
         continue;
       }
@@ -108,11 +111,13 @@ export const scheduledTriggerLineDelivery = inngest.createFunction(
               COUNT(DISTINCT c."id")::int AS "checkInCount"
             FROM "users" u
             LEFT JOIN "user_surveys" s ON s."id" = u."surveyId"
-            LEFT JOIN "user_checkins" c ON c."userId" = u."userId"
+            LEFT JOIN "user_checkins" c
+              ON c."userId" = u."userId"
+              AND c."officialAccountId" = ${setting.officialAccountId}
             WHERE s."birthDate" IS NOT NULL
               AND EXTRACT(MONTH FROM timezone('Asia/Tokyo', s."birthDate"))::int = ${month}
               AND EXTRACT(DAY FROM timezone('Asia/Tokyo', s."birthDate"))::int = ${day}
-              ${setting.officialAccountId ? Prisma.sql`AND u."officialAccountId" = ${setting.officialAccountId}` : Prisma.empty}
+              AND u."officialAccountId" = ${setting.officialAccountId}
               ${setting.targetRankIds.length > 0 ? Prisma.sql`AND u."nextRank" IN (${Prisma.join(setting.targetRankIds)})` : Prisma.empty}
               ${setting.targetGender ? Prisma.sql`AND s."gender" = ${setting.targetGender}` : Prisma.empty}
             GROUP BY u."userId"
@@ -127,12 +132,17 @@ export const scheduledTriggerLineDelivery = inngest.createFunction(
             COUNT(DISTINCT c."id")::int AS "checkInCount"
           FROM "user_gifts" ug
           INNER JOIN "users" u ON u."userId" = ug."userId"
+          INNER JOIN "gifts" g
+            ON g."id" = ug."giftId"
+            AND g."officialAccountId" = ${setting.officialAccountId}
           LEFT JOIN "user_surveys" s ON s."id" = u."surveyId"
-          LEFT JOIN "user_checkins" c ON c."userId" = u."userId"
+          LEFT JOIN "user_checkins" c
+            ON c."userId" = u."userId"
+            AND c."officialAccountId" = ${setting.officialAccountId}
           WHERE ug."isUsed" = false
             AND ug."expiresAt" >= ${start}
             AND ug."expiresAt" < ${end}
-            ${setting.officialAccountId ? Prisma.sql`AND u."officialAccountId" = ${setting.officialAccountId}` : Prisma.empty}
+            AND u."officialAccountId" = ${setting.officialAccountId}
             ${setting.targetRankIds.length > 0 ? Prisma.sql`AND u."nextRank" IN (${Prisma.join(setting.targetRankIds)})` : Prisma.empty}
             ${setting.targetGender ? Prisma.sql`AND s."gender" = ${setting.targetGender}` : Prisma.empty}
           GROUP BY u."userId"

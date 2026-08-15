@@ -37,7 +37,7 @@ async function resolveAdminUser(request: Request) {
     where: { id: adminId },
     select: { id: true, officialAccountId: true },
   });
-  if (!adminUser) {
+  if (!adminUser?.officialAccountId) {
     return {
       adminUser: null,
       errorResponse: Response.json(
@@ -47,14 +47,20 @@ async function resolveAdminUser(request: Request) {
     };
   }
 
-  return { adminUser, errorResponse: null };
+  return {
+    adminUser: {
+      id: adminUser.id,
+      officialAccountId: adminUser.officialAccountId,
+    },
+    errorResponse: null,
+  };
 }
 
-async function resolveTargetUser(userId: string, officialAccountId: string | null) {
+async function resolveTargetUser(userId: string, officialAccountId: string) {
   return prisma.user.findFirst({
     where: {
       userId,
-      ...(officialAccountId ? { officialAccountId } : {}),
+      officialAccountId,
     },
     select: {
       userId: true,
@@ -76,6 +82,7 @@ export async function GET(request: Request, context: RouteContext) {
 
     const [gifts, userGifts] = await Promise.all([
       prisma.gift.findMany({
+        where: { officialAccountId: auth.adminUser.officialAccountId },
         orderBy: { createdAt: "desc" },
         select: {
           id: true,
@@ -148,8 +155,11 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const gift = await prisma.gift.findUnique({
-      where: { id: parsed.data.giftId },
+    const gift = await prisma.gift.findFirst({
+      where: {
+        id: parsed.data.giftId,
+        officialAccountId: auth.adminUser.officialAccountId,
+      },
       select: {
         id: true,
         expiryType: true,

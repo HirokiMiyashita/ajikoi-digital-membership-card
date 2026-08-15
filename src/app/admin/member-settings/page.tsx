@@ -15,6 +15,7 @@ export default async function AdminMemberSettingsPage() {
 
   const [gifts, ranks, setting] = await Promise.all([
     prisma.gift.findMany({
+      where: { officialAccountId: adminUser.officialAccountId! },
       orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
       select: {
         id: true,

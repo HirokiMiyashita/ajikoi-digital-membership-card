@@ -56,7 +56,7 @@ async function getAdminScope() {
     where: { id: adminId },
     select: { officialAccountId: true },
   });
-  if (!adminUser) {
+  if (!adminUser?.officialAccountId) {
     return { ok: false as const, status: 403, message: "管理者情報が見つかりません。" };
   }
 
@@ -82,7 +82,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     const target = await prisma.lineDeliveryTriggerSetting.findFirst({
       where: {
         id: triggerId,
-        ...(scope.adminUser.officialAccountId ? { officialAccountId: scope.adminUser.officialAccountId } : {}),
+        officialAccountId: scope.adminUser.officialAccountId,
       },
       select: {
         id: true,
@@ -164,7 +164,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     const target = await prisma.lineDeliveryTriggerSetting.findFirst({
       where: {
         id: triggerId,
-        ...(scope.adminUser.officialAccountId ? { officialAccountId: scope.adminUser.officialAccountId } : {}),
+        officialAccountId: scope.adminUser.officialAccountId,
       },
       select: { id: true },
     });

@@ -11,7 +11,10 @@ import {
   getOnboardingSurveyPresetByPresetKey,
 } from "@/lib/onboarding-survey";
 import { adminAuth } from "@/lib/admin-auth";
+import { getEffectiveStoreStatus } from "@/lib/business-hours";
+import { requireLiffUser } from "@/lib/liff-auth";
 import { prisma } from "@/lib/prisma";
+import { getStoreLineAccessToken } from "@/lib/store";
 const prismaUnsafe = prisma as unknown as {
   onboardingSurveyQuestionSetting: {
     upsert: (args: unknown) => Promise<unknown>;
@@ -64,7 +67,10 @@ function matchesVisitQrToken(qrValue: string, expectedToken: string) {
 
   try {
     const url = new URL(qrValue);
-    return url.searchParams.get("token") === expectedToken;
+    return (
+      url.searchParams.get("checkinToken") === expectedToken ||
+      url.searchParams.get("token") === expectedToken
+    );
   } catch {
     return false;
   }
@@ -93,7 +99,14 @@ function isCreatedTodayInJst(createdAt: Date, startOfTodayInJstUtc: Date) {
   return createdAt >= startOfTodayInJstUtc;
 }
 
-async function resolveOfficialAccountId() {
+async function resolveOfficialAccountId(storeSlug?: string) {
+  if (storeSlug) {
+    const store = await prisma.officialAccount.findUnique({
+      where: { slug: storeSlug },
+      select: { id: true },
+    });
+    return store?.id ?? null;
+  }
   const now = Date.now();
   if (officialAccountCache && officialAccountCache.expiresAt > now) {
     return officialAccountCache.id;
@@ -123,8 +136,10 @@ async function resolveOfficialAccountId() {
   try {
     const created = await prisma.officialAccount.create({
       data: {
+        slug: lineBasicId.replace(/^@/, "").toLowerCase().replace(/[^a-z0-9-]/g, "-"),
         lineBasicId,
         name: lineBasicId,
+        displayName: lineBasicId,
       },
       select: { id: true },
     });
@@ -384,17 +399,32 @@ async function issueGiftFromSetting(params: {
   dedupeValue: string;
   extraMetadata?: Record<string, unknown>;
 }) {
-  const gift = await prisma.gift.findUnique({
-    where: { id: params.giftId },
-    select: {
-      id: true,
-      title: true,
-      expiryType: true,
-      expiryDays: true,
-      expiryAt: true,
-    },
-  });
-  if (!gift) {
+  if (!params.officialAccountId) {
+    return null;
+  }
+  const [gift, user] = await Promise.all([
+    prisma.gift.findFirst({
+      where: {
+        id: params.giftId,
+        officialAccountId: params.officialAccountId,
+      },
+      select: {
+        id: true,
+        title: true,
+        expiryType: true,
+        expiryDays: true,
+        expiryAt: true,
+      },
+    }),
+    prisma.user.findFirst({
+      where: {
+        userId: params.userId,
+        officialAccountId: params.officialAccountId,
+      },
+      select: { userId: true },
+    }),
+  ]);
+  if (!gift || !user) {
     return null;
   }
 
@@ -538,7 +568,10 @@ async function sendLineDeliveryTriggers(params: {
         },
       }),
       prisma.userCheckIn.count({
-        where: { userId: params.targetUserId },
+        where: {
+          userId: params.targetUserId,
+          officialAccountId: params.officialAccountId,
+        },
       }),
     ]);
     if (!targetUser) {
@@ -674,7 +707,10 @@ function toVisitGachaPreviewGift(gift: {
 }
 
 async function resolveVisitGachaContext(userId: string, officialAccountId: string | null): Promise<VisitGachaContext | null> {
-  const scopeKey = officialAccountId ?? "global";
+  if (!officialAccountId) {
+    return null;
+  }
+  const scopeKey = officialAccountId;
   const setting = (await prismaUnsafe.visitGachaSetting.findUnique({
     where: { scopeKey },
     select: {
@@ -691,6 +727,7 @@ async function resolveVisitGachaContext(userId: string, officialAccountId: strin
       gift: {
         select: {
           id: true,
+          officialAccountId: true,
           title: true,
           usageGuide: true,
           imageUrl: true,
@@ -708,6 +745,7 @@ async function resolveVisitGachaContext(userId: string, officialAccountId: strin
     rankProbabilities: Array<{ rankId: string; winProbability: number }>;
     gift: {
       id: string;
+      officialAccountId: string;
       title: string;
       usageGuide: string;
       imageUrl: string;
@@ -716,7 +754,12 @@ async function resolveVisitGachaContext(userId: string, officialAccountId: strin
       expiryAt: Date | null;
     } | null;
   } | null;
-  if (!setting || !setting.isActive || !setting.gift) {
+  if (
+    !setting ||
+    !setting.isActive ||
+    !setting.gift ||
+    setting.gift.officialAccountId !== officialAccountId
+  ) {
     return null;
   }
 
@@ -894,8 +937,9 @@ function formatJstYmd(date: Date) {
 async function getLineUniqueImpressionByAggregationUnit(
   aggregationUnit: string,
   sentAt: Date,
+  officialAccountId: string,
 ): Promise<number | null> {
-  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
+  const accessToken = await getStoreLineAccessToken(officialAccountId);
   if (!accessToken) {
     return null;
   }
@@ -1231,7 +1275,11 @@ async function getAdminReportMetrics(officialAccountId: string | null) {
       `),
       latestDelivery.aggregationUnit
         ? measure("latestDeliveryOpened", () =>
-            getLineUniqueImpressionByAggregationUnit(latestDelivery.aggregationUnit!, latestDelivery.sentAt),
+            getLineUniqueImpressionByAggregationUnit(
+              latestDelivery.aggregationUnit!,
+              latestDelivery.sentAt,
+              officialAccountId!,
+            ),
           )
         : Promise.resolve(null),
     ]);
@@ -1398,12 +1446,31 @@ export const appRouter = {
           userId: z.string().min(1),
           displayName: z.string().min(1),
           pictureUrl: z.string().optional(),
+          storeSlug: z.string().min(1),
         }),
       )
-      .handler(async ({ input }) => {
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({
+          context,
+          userId: input.userId,
+          storeSlug: input.storeSlug,
+        });
         const startedAt = Date.now();
         const ranksPromise = getCachedRanks();
-        const officialAccountId = await resolveOfficialAccountId();
+        const officialAccountId = await resolveOfficialAccountId(input.storeSlug);
+        if (!officialAccountId) {
+          throw new Error("店舗が見つかりません。");
+        }
+        const existingUser = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: { officialAccountId: true },
+        });
+        if (
+          existingUser?.officialAccountId &&
+          existingUser.officialAccountId !== officialAccountId
+        ) {
+          throw new Error("このLINEユーザーは別の店舗に登録されています。");
+        }
         const officialResolvedAt = Date.now();
         const upsertRows = await prisma.$queryRaw<UpsertedLiffUserRow[]>`
           WITH existed AS (
@@ -1542,15 +1609,22 @@ export const appRouter = {
       .input(
         z.object({
           userId: z.string().min(1),
+          storeSlug: z.string().min(1),
         }),
       )
-      .handler(async ({ input }) => {
-        const officialAccountId = await resolveOfficialAccountId();
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({
+          context,
+          userId: input.userId,
+          storeSlug: input.storeSlug,
+        });
+        const officialAccountId = await resolveOfficialAccountId(input.storeSlug);
         if (!officialAccountId) {
           return {
             ok: true,
             authorized: false,
             isOpen: false,
+            isAutomatic: false,
             canOpen: false,
             canClose: false,
           };
@@ -1572,6 +1646,7 @@ export const appRouter = {
             ok: true,
             authorized: false,
             isOpen: false,
+            isAutomatic: false,
             canOpen: false,
             canClose: false,
           };
@@ -1594,59 +1669,41 @@ export const appRouter = {
             ok: true,
             authorized: false,
             isOpen: false,
+            isAutomatic: false,
             canOpen: false,
             canClose: false,
           };
         }
 
-        const existingStatus = await prisma.storeStatus.findUnique({
-          where: { officialAccountId },
-          select: { isOpen: true },
-        });
-        const status = existingStatus
-          ?? (await prisma.storeStatus.create({
-            data: {
-              officialAccountId,
-              isOpen: false,
-            },
-            select: { isOpen: true },
-          }));
+        const status = await getEffectiveStoreStatus(officialAccountId);
 
         return {
           ok: true,
           authorized: true,
           isOpen: status.isOpen,
-          canOpen: permission.canOpen,
-          canClose: permission.canClose,
+          isAutomatic: status.isAutomatic,
+          canOpen: status.isAutomatic ? false : permission.canOpen,
+          canClose: status.isAutomatic ? false : permission.canClose,
         };
       }),
     getStoreStatus: os
-      .input(z.object({}))
-      .handler(async () => {
-        const officialAccountId = await resolveOfficialAccountId();
+      .input(z.object({ storeSlug: z.string().min(1) }))
+      .handler(async ({ input }) => {
+        const officialAccountId = await resolveOfficialAccountId(input.storeSlug);
         if (!officialAccountId) {
           return {
             ok: true,
             isOpen: false,
+            isAutomatic: false,
           };
         }
 
-        const existingStatus = await prisma.storeStatus.findUnique({
-          where: { officialAccountId },
-          select: { isOpen: true },
-        });
-        const status = existingStatus
-          ?? (await prisma.storeStatus.create({
-            data: {
-              officialAccountId,
-              isOpen: false,
-            },
-            select: { isOpen: true },
-          }));
+        const status = await getEffectiveStoreStatus(officialAccountId);
 
         return {
           ok: true,
           isOpen: status.isOpen,
+          isAutomatic: status.isAutomatic,
         };
       }),
     toggleStaffStoreStatus: os
@@ -1654,12 +1711,22 @@ export const appRouter = {
         z.object({
           userId: z.string().min(1),
           action: z.enum(["open", "close"]),
+          storeSlug: z.string().min(1),
         }),
       )
-      .handler(async ({ input }) => {
-        const officialAccountId = await resolveOfficialAccountId();
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({
+          context,
+          userId: input.userId,
+          storeSlug: input.storeSlug,
+        });
+        const officialAccountId = await resolveOfficialAccountId(input.storeSlug);
         if (!officialAccountId) {
           throw new Error("公式アカウント設定が見つかりません。");
+        }
+        const effectiveStatus = await getEffectiveStoreStatus(officialAccountId);
+        if (effectiveStatus.isAutomatic) {
+          throw new Error("営業時間設定による自動切り替えが有効です。");
         }
 
         const user = await prisma.user.findUnique({
@@ -1720,9 +1787,9 @@ export const appRouter = {
         };
       }),
     getOnboardingSurveyQuestions: os
-      .input(z.object({}))
-      .handler(async () => {
-        const officialAccountId = await resolveOfficialAccountId();
+      .input(z.object({ storeSlug: z.string().min(1) }))
+      .handler(async ({ input }) => {
+        const officialAccountId = await resolveOfficialAccountId(input.storeSlug);
         const rows = await ensureOnboardingSurveySettings(officialAccountId);
         return {
           ok: true,
@@ -1755,7 +1822,8 @@ export const appRouter = {
           ),
         }),
       )
-      .handler(async ({ input }) => {
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({ context, userId: input.userId });
         const existingUser = await prisma.user.findUnique({
           where: { userId: input.userId },
           select: { surveyId: true, officialAccountId: true },
@@ -1900,11 +1968,20 @@ export const appRouter = {
           userId: z.string().min(1),
         }),
       )
-      .handler(async ({ input }) => {
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({ context, userId: input.userId });
+        const user = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: { officialAccountId: true },
+        });
+        if (!user?.officialAccountId) {
+          throw new Error("ユーザーの店舗情報が見つかりません。");
+        }
         const now = new Date();
         const gifts = await prisma.userGift.findMany({
           where: {
             userId: input.userId,
+            gift: { officialAccountId: user.officialAccountId },
             isUsed: false,
             expiresAt: {
               gte: now,
@@ -1944,12 +2021,21 @@ export const appRouter = {
           userGiftId: z.string().min(1),
         }),
       )
-      .handler(async ({ input }) => {
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({ context, userId: input.userId });
+        const user = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: { officialAccountId: true },
+        });
+        if (!user?.officialAccountId) {
+          throw new Error("ユーザーの店舗情報が見つかりません。");
+        }
         const now = new Date();
         const updated = await prisma.userGift.updateMany({
           where: {
             id: input.userGiftId,
             userId: input.userId,
+            gift: { officialAccountId: user.officialAccountId },
             isUsed: false,
             expiresAt: {
               gte: now,
@@ -1977,7 +2063,8 @@ export const appRouter = {
           giftId: z.string().min(1),
         }),
       )
-      .handler(async ({ input }) => {
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({ context, userId: input.userId });
         const [user, gift] = await Promise.all([
           prisma.user.findUnique({
             where: { userId: input.userId },
@@ -1990,6 +2077,7 @@ export const appRouter = {
             where: { id: input.giftId },
             select: {
               id: true,
+              officialAccountId: true,
               title: true,
               expiryType: true,
               expiryDays: true,
@@ -2002,6 +2090,9 @@ export const appRouter = {
         }
         if (!gift) {
           throw new Error("ギフトが見つかりません。");
+        }
+        if (!user.officialAccountId || gift.officialAccountId !== user.officialAccountId) {
+          throw new Error("この店舗のギフトではありません。");
         }
 
         const expiresAt = resolveGiftExpiryAt(gift);
@@ -2079,7 +2170,8 @@ export const appRouter = {
           password: z.string().regex(/^\d{4}$/),
         }),
       )
-      .handler(async ({ input }) => {
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({ context, userId: input.userId });
         const user = await prisma.user.findUnique({
           where: { userId: input.userId },
           select: {
@@ -2099,7 +2191,10 @@ export const appRouter = {
           };
         }
 
-        const officialAccountId = user.officialAccountId ?? (await resolveOfficialAccountId());
+        const officialAccountId = user.officialAccountId;
+        if (!officialAccountId) {
+          throw new Error("ユーザーの店舗情報が見つかりません。");
+        }
         const benefitSetting = await getMemberBenefitSetting(officialAccountId);
         if (!benefitSetting?.reviewGiftId) {
           throw new Error("口コミ特典ギフトが未設定です。");
@@ -2157,7 +2252,8 @@ export const appRouter = {
           userId: z.string().min(1),
         }),
       )
-      .handler(async ({ input }) => {
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({ context, userId: input.userId });
         const user = await prisma.user.findUnique({
           where: { userId: input.userId },
           select: {
@@ -2206,7 +2302,10 @@ export const appRouter = {
           };
         }
 
-        const officialAccountId = user.officialAccountId ?? (await resolveOfficialAccountId());
+        const officialAccountId = user.officialAccountId;
+        if (!officialAccountId) {
+          throw new Error("ユーザーの店舗情報が見つかりません。");
+        }
         const gacha = await runVisitGacha(user.userId, officialAccountId);
         if (!gacha.executed) {
           return {
@@ -2256,9 +2355,25 @@ export const appRouter = {
           qrValue: z.string().min(1),
         }),
       )
-      .handler(async ({ input }) => {
-        const expectedQrToken = process.env.VISIT_QR_TOKEN;
-        if (expectedQrToken && !matchesVisitQrToken(input.qrValue.trim(), expectedQrToken)) {
+      .handler(async ({ input, context }) => {
+        await requireLiffUser({ context, userId: input.userId });
+        const visitUser = await prisma.user.findUnique({
+          where: { userId: input.userId },
+          select: {
+            officialAccount: {
+              select: { visitQrToken: true },
+            },
+            officialAccountId: true,
+          },
+        });
+        if (!visitUser) {
+          throw new Error("ユーザーが見つかりません。");
+        }
+        if (!visitUser.officialAccountId) {
+          throw new Error("ユーザーの店舗情報が見つかりません。");
+        }
+        const expectedQrToken = visitUser.officialAccount?.visitQrToken;
+        if (!expectedQrToken || !matchesVisitQrToken(input.qrValue.trim(), expectedQrToken)) {
           throw new Error("無効なQRコードです。");
         }
 

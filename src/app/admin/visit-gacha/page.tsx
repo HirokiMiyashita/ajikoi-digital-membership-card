@@ -9,6 +9,7 @@ export default async function AdminVisitGachaPage() {
 
   const [gifts, ranks, setting] = await Promise.all([
     prisma.gift.findMany({
+      where: { officialAccountId: adminUser.officialAccountId! },
       orderBy: { createdAt: "desc" },
       select: { id: true, title: true },
       take: 200,

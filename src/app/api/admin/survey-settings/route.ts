@@ -43,8 +43,8 @@ export async function PATCH(request: Request) {
   try {
     const adminUser = await requireAdminUser();
     const body = payloadSchema.parse(await request.json());
-    const scopeKey = adminUser.officialAccountId ?? "global";
-    const officialAccountId = adminUser.officialAccountId ?? null;
+    const scopeKey = adminUser.officialAccountId;
+    const officialAccountId = adminUser.officialAccountId;
 
     const presetMap = new Map(ONBOARDING_SURVEY_PRESETS.map((preset) => [preset.questionKey, preset]));
     const sanitized = body.questions.map((question, index) => {

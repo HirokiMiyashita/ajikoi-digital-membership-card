@@ -35,9 +35,10 @@ function resolveLineImageUrl(imageUrl: string, absoluteTemplateUrls: string[]) {
 }
 
 export default async function AdminTriggerDeliveryNewPage() {
-  await requireAdminUser();
+  const adminUser = await requireAdminUser();
   const [gifts, templates, ranks] = await Promise.all([
     prisma.gift.findMany({
+      where: { officialAccountId: adminUser.officialAccountId! },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,

@@ -19,7 +19,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       where: { id: adminId },
       select: { id: true, officialAccountId: true },
     });
-    if (!adminUser) {
+    if (!adminUser?.officialAccountId) {
       return Response.json({ ok: false, message: "管理者権限がありません。" }, { status: 403 });
     }
 
@@ -41,10 +41,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!target) {
       return Response.json({ ok: false, message: "対象ギフトが見つかりません。" }, { status: 404 });
     }
-    if (
-      adminUser.officialAccountId &&
-      target.user.officialAccountId !== adminUser.officialAccountId
-    ) {
+    if (target.user.officialAccountId !== adminUser.officialAccountId) {
       return Response.json({ ok: false, message: "他店舗ユーザーのギフトは更新できません。" }, { status: 403 });
     }
 

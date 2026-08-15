@@ -29,7 +29,7 @@ export async function PATCH(request: Request) {
       where: { id: adminId },
       select: { officialAccountId: true },
     });
-    if (!adminUser) {
+    if (!adminUser?.officialAccountId) {
       return NextResponse.json({ ok: false, message: "管理者情報が見つかりません。" }, { status: 403 });
     }
 
@@ -41,12 +41,12 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const scopeKey = adminUser.officialAccountId ?? "global";
+    const scopeKey = adminUser.officialAccountId;
     const saved = await prisma.memberBenefitSetting.upsert({
       where: { scopeKey },
       create: {
         scopeKey,
-        officialAccountId: adminUser.officialAccountId ?? null,
+        officialAccountId: adminUser.officialAccountId,
         reviewPasswordHash: hashReviewPassword(parsed.data.password),
       },
       update: {

@@ -25,9 +25,9 @@ export async function POST(request: Request) {
 
   const adminUser = await prisma.adminUser.findUnique({
     where: { id: adminId },
-    select: { id: true },
+    select: { id: true, officialAccountId: true },
   });
-  if (!adminUser) {
+  if (!adminUser?.officialAccountId) {
     return Response.json(
       { ok: false, message: "管理者権限がありません。" },
       { status: 403 },
@@ -57,10 +57,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const blob = await put(`gifts/${Date.now()}-${file.name}`, file, {
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const blob = await put(
+      `stores/${adminUser.officialAccountId}/gifts/${Date.now()}-${safeFileName}`,
+      file,
+      {
       access: "public",
       addRandomSuffix: true,
-    });
+      },
+    );
     return Response.json({
       ok: true,
       imagePath: blob.url,

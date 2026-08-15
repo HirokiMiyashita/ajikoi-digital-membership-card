@@ -48,7 +48,7 @@ export async function POST(request: Request) {
       where: { id: adminId },
       select: { id: true, officialAccountId: true },
     });
-    if (!adminUser) {
+    if (!adminUser?.officialAccountId) {
       return Response.json(
         { ok: false, message: "管理者権限がありません。" },
         { status: 403 },
@@ -68,8 +68,8 @@ export async function POST(request: Request) {
 
     const { giftId, winImageUrl, loseImageUrl, winProbability, rankWinProbabilities, isActive } = parsed.data;
 
-    const gift = await prisma.gift.findUnique({
-      where: { id: giftId },
+    const gift = await prisma.gift.findFirst({
+      where: { id: giftId, officialAccountId: adminUser.officialAccountId },
       select: { id: true },
     });
     if (!gift) {
@@ -97,13 +97,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const scopeKey = adminUser.officialAccountId ?? "global";
+    const scopeKey = adminUser.officialAccountId;
     await prisma.$transaction(async (tx) => {
       const setting = await tx.visitGachaSetting.upsert({
         where: { scopeKey },
         create: {
           scopeKey,
-          officialAccountId: adminUser.officialAccountId ?? null,
+          officialAccountId: adminUser.officialAccountId,
           giftId,
           winImageUrl: winImageUrl ?? null,
           loseImageUrl: loseImageUrl ?? null,

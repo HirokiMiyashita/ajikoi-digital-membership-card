@@ -6,6 +6,12 @@ import { appRouter } from "./router";
 
 type AppRouterClient = RouterClient<typeof appRouter>;
 
+let liffIdToken: string | null = null;
+
+export function setRpcLiffIdToken(token: string | null) {
+  liffIdToken = token;
+}
+
 const rpcLink = new RPCLink({
   url: () => {
     if (typeof window !== "undefined") {
@@ -13,6 +19,14 @@ const rpcLink = new RPCLink({
     }
 
     return new URL("http://localhost:3000/api/rpc");
+  },
+  fetch: async (request, init) => {
+    if (!liffIdToken) {
+      return fetch(request, init);
+    }
+    const headers = new Headers(request.headers);
+    headers.set("authorization", `Bearer ${liffIdToken}`);
+    return fetch(new Request(request, { headers }), init);
   },
 });
 

@@ -126,6 +126,7 @@ enum GiftExpiryType {
 
 model Gift {
   id                         String                   @id @default(cuid())
+  officialAccountId          String
   title                      String
   usageGuide                 String
   expiryType                 GiftExpiryType
@@ -134,6 +135,7 @@ model Gift {
   imageUrl                   String
   createdAt                  DateTime                 @default(now())
   updatedAt                  DateTime                 @updatedAt
+  officialAccount            OfficialAccount          @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
   userGifts                  UserGift[]
   visitGachaSettings         VisitGachaSetting[]
   signupBenefitSettings      MemberBenefitSetting[]   @relation("SignupBenefitGift")
@@ -141,6 +143,7 @@ model Gift {
   topRankLoopBenefitSettings MemberBenefitSetting[]   @relation("TopRankLoopBenefitGift")
   rankBenefitGiftSettings    RankBenefitGiftSetting[]
 
+  @@index([officialAccountId])
   @@map("gifts")
 }
 
@@ -230,9 +233,12 @@ model Rank {
 
 model AdminUser {
   id                String           @id
-  passwordHash      String
-  officialAccountId String?
-  officialAccount   OfficialAccount? @relation(fields: [officialAccountId], references: [id])
+  email             String?          @unique
+  displayName       String?
+  avatarUrl         String?
+  passwordHash      String?
+  officialAccountId String?          @unique
+  officialAccount   OfficialAccount? @relation(fields: [officialAccountId], references: [id], onDelete: SetNull)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -241,10 +247,21 @@ model AdminUser {
 
 model OfficialAccount {
   id                               String                            @id @default(cuid())
+  slug                             String                            @unique
   lineBasicId                      String                            @unique
   name                             String?
+  displayName                      String?
+  logoUrl                          String?
+  themeColor                       String                            @default("#0f766e")
+  liffId                           String?
+  lineAddFriendUrl                 String?
+  lineChannelAccessToken           String?                           @db.Text
+  visitQrToken                     String?
+  googleReviewUrl                  String?
+  onboardingCompletedAt            DateTime?
   users                            User[]
   adminUsers                       AdminUser[]
+  gifts                            Gift[]
   onboardingSurveyQuestionSettings OnboardingSurveyQuestionSetting[]
   userHistories                    UserHistory[]
   checkIns                         UserCheckIn[]
@@ -253,10 +270,39 @@ model OfficialAccount {
   staffOperationPermissions        StaffStoreOperationPermission[]
   memberBenefitSettings            MemberBenefitSetting[]
   storeStatus                      StoreStatus?
+  businessHours                    StoreBusinessHour[]
   createdAt                        DateTime                          @default(now())
   updatedAt                        DateTime                          @updatedAt
 
+  @@index([liffId])
   @@map("official_accounts")
+}
+
+enum BusinessHourDay {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+  HOLIDAY
+}
+
+model StoreBusinessHour {
+  id                String          @id @default(cuid())
+  officialAccountId String
+  day               BusinessHourDay
+  isClosed          Boolean         @default(false)
+  openingMinute     Int?
+  closingMinute     Int?
+  officialAccount   OfficialAccount @relation(fields: [officialAccountId], references: [id], onDelete: Cascade)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([officialAccountId, day])
+  @@index([officialAccountId])
+  @@map("store_business_hours")
 }
 
 enum LineDeliveryTriggerType {
@@ -402,65 +448,3 @@ model UserHistory {
   @@map("user_history")
 }
 
-model AdminAuthUser {
-  id              String             @id
-  name            String
-  email           String
-  emailVerified   Boolean
-  image           String?
-  username        String?            @unique
-  displayUsername String?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-  sessions        AdminAuthSession[]
-  accounts        AdminAuthAccount[]
-
-  @@unique([email])
-  @@map("admin_auth_user")
-}
-
-model AdminAuthSession {
-  id        String        @id
-  expiresAt DateTime
-  token     String        @unique
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  ipAddress String?
-  userAgent String?
-  userId    String
-  user      AdminAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@map("admin_auth_session")
-}
-
-model AdminAuthAccount {
-  id                    String        @id
-  accountId             String
-  providerId            String
-  userId                String
-  user                  AdminAuthUser @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?
-  refreshToken          String?
-  idToken               String?
-  accessTokenExpiresAt  DateTime?
-  refreshTokenExpiresAt DateTime?
-  scope                 String?
-  password              String?
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
-
-  @@index([userId])
-  @@map("admin_auth_account")
-}
-
-model AdminAuthVerification {
-  id         String    @id
-  identifier String
-  value      String
-  expiresAt  DateTime
-  createdAt  DateTime?
-  updatedAt  DateTime?
-
-  @@map("admin_auth_verification")
-}

@@ -3,9 +3,10 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 
 export default async function AdminGiftsPage() {
-  await requireAdminUser();
+  const admin = await requireAdminUser();
 
   const gifts = await prisma.gift.findMany({
+    where: { officialAccountId: admin.officialAccountId! },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,

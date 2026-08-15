@@ -8,6 +8,8 @@ const menuItems = [
   { label: "口コミパスワード", href: "/admin/review-password" },
   { label: "会員登録アンケート", href: "/admin/survey-settings" },
   { label: "QRコードを印刷", href: "/admin/print-qr" },
+  { label: "営業時間登録", href: "/admin/business-hours" },
+  { label: "店舗設定", href: "/admin/store-settings" },
 ];
 
 export default async function AdminMenuPage() {

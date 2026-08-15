@@ -8,24 +8,31 @@
     "start": "next start",
     "postinstall": "prisma generate",
     "lint": "eslint",
+    "test": "DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55322/postgres} DIRECT_URL=${DIRECT_URL:-postgresql://postgres:postgres@127.0.0.1:55322/postgres} vitest run",
+    "test:tenant": "DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:55322/postgres} DIRECT_URL=${DIRECT_URL:-postgresql://postgres:postgres@127.0.0.1:55322/postgres} vitest run tests/tenant-isolation",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "db:seed:report": "node scripts/seed-report-data.mjs",
     "db:seed:gift-templates": "node scripts/seed-gift-templates.mjs",
-    "db:up": "docker compose up -d",
-    "db:down": "docker compose down"
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:status": "supabase status",
+    "db:up": "supabase start",
+    "db:down": "supabase stop",
+    "db:migrate:local": "DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres DIRECT_URL=postgresql://postgres:postgres@127.0.0.1:55322/postgres prisma migrate deploy",
+    "db:reset": "supabase db reset --no-seed && npm run db:migrate:local"
   },
   "dependencies": {
-    "@better-auth/prisma-adapter": "^1.6.9",
+    "@holiday-jp/holiday_jp": "^2.5.1",
     "@line/liff": "^2.28.0",
     "@orpc/client": "^1.14.0",
     "@orpc/server": "^1.14.0",
     "@orpc/standard-server-fetch": "^1.14.0",
     "@prisma/client": "^6.19.3",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.112.3",
     "@vercel/blob": "^2.3.3",
-    "bcryptjs": "^3.0.3",
-    "better-auth": "^1.6.9",
     "inngest": "^4.3.0",
     "next": "16.2.4",
     "qrcode": "^1.5.4",
@@ -38,12 +45,15 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
     "prisma": "^6.19.0",
+    "supabase": "^2.114.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

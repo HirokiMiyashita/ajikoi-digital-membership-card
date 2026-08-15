@@ -1,5 +1,6 @@
 import { inngest } from "@/lib/inngest/client";
 import { prisma } from "@/lib/prisma";
+import { getStoreLineAccessToken } from "@/lib/store";
 import { z } from "zod";
 
 const triggerLineDeliveryPayloadSchema = z.object({
@@ -25,7 +26,7 @@ const triggerLineDeliveryPayloadSchema = z.object({
       ]),
     )
     .min(1),
-  officialAccountId: z.string().nullable(),
+  officialAccountId: z.string().min(1),
   targetUserIds: z.array(z.string().min(1)).optional().default([]),
   scheduledAt: z.string().datetime().nullable().optional().default(null),
   triggeredBy: z.string().min(1),
@@ -62,9 +63,9 @@ export const triggerLineDelivery = inngest.createFunction(
       }
     }
 
-    const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
+    const accessToken = await getStoreLineAccessToken(officialAccountId);
     if (!accessToken) {
-      throw new Error("LINE_CHANNEL_ACCESS_TOKEN が未設定です。");
+      throw new Error("店舗のLINE Channel Access Tokenが未設定です。");
     }
 
     const recipients = await step.run("resolve-recipients", async () => {

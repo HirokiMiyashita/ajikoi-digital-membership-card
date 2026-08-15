@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "あの味が恋しい。",
-  description: "あの味が恋しい。",
+  title: "デジタル会員証",
+  description: "LINEと連携できる店舗向けデジタル会員証",
 };
 
 export default function RootLayout({

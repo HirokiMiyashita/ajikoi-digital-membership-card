@@ -33,7 +33,7 @@ export async function PATCH(request: Request) {
       where: { id: adminId },
       select: { officialAccountId: true },
     });
-    if (!adminUser) {
+    if (!adminUser?.officialAccountId) {
       return NextResponse.json({ ok: false, message: "管理者情報が見つかりません。" }, { status: 403 });
     }
 
@@ -45,7 +45,7 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const scopeKey = adminUser.officialAccountId ?? "global";
+    const scopeKey = adminUser.officialAccountId;
     const { signupGiftId, reviewGiftId, topRankLoopGiftId, rankGiftSettings } = parsed.data;
 
     const requestedGiftIds = new Set<string>();
@@ -57,7 +57,10 @@ export async function PATCH(request: Request) {
     }
     if (requestedGiftIds.size > 0) {
       const existingGiftRows = await prisma.gift.findMany({
-        where: { id: { in: Array.from(requestedGiftIds) } },
+        where: {
+          id: { in: Array.from(requestedGiftIds) },
+          officialAccountId: adminUser.officialAccountId,
+        },
         select: { id: true },
       });
       if (existingGiftRows.length !== requestedGiftIds.size) {
@@ -87,7 +90,7 @@ export async function PATCH(request: Request) {
         where: { scopeKey },
         create: {
           scopeKey,
-          officialAccountId: adminUser.officialAccountId ?? null,
+          officialAccountId: adminUser.officialAccountId,
         },
         update: {},
         select: {

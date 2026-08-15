@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     where: { id: adminId },
     select: { id: true, officialAccountId: true },
   });
-  if (!adminUser) {
+  if (!adminUser?.officialAccountId) {
     return Response.json(
       { ok: false, message: "管理者権限がありません。" },
       { status: 403 },
@@ -57,15 +57,15 @@ export async function POST(request: Request) {
       { status: 404 },
     );
   }
-  if (adminUser.officialAccountId && user.officialAccountId !== adminUser.officialAccountId) {
+  if (user.officialAccountId !== adminUser.officialAccountId) {
     return Response.json(
       { ok: false, message: "他店舗ユーザーには付与できません。" },
       { status: 403 },
     );
   }
 
-  const gift = await prisma.gift.findUnique({
-    where: { id: giftId },
+  const gift = await prisma.gift.findFirst({
+    where: { id: giftId, officialAccountId: adminUser.officialAccountId },
     select: {
       id: true,
       expiryType: true,

@@ -1,5 +1,7 @@
-import { toNextJsHandler } from "better-auth/next-js";
+export async function GET() {
+  return Response.json({ message: "Supabase Authを使用しています。" }, { status: 410 });
+}
 
-import { adminAuth } from "@/lib/admin-auth";
-
-export const { GET, POST } = toNextJsHandler(adminAuth);
+export async function POST() {
+  return Response.json({ message: "Supabase Authを使用しています。" }, { status: 410 });
+}

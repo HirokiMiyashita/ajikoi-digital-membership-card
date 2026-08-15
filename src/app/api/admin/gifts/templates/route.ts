@@ -22,9 +22,9 @@ export async function GET(request: Request) {
 
   const adminUser = await prisma.adminUser.findUnique({
     where: { id: adminId },
-    select: { id: true },
+    select: { id: true, officialAccountId: true },
   });
-  if (!adminUser) {
+  if (!adminUser?.officialAccountId) {
     return Response.json(
       { ok: false, message: "管理者権限がありません。" },
       { status: 403 },

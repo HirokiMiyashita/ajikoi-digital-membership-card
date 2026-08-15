@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       where: { id: adminId },
       select: { officialAccountId: true },
     });
-    if (!adminUser) {
+    if (!adminUser?.officialAccountId) {
       return NextResponse.json({ ok: false, message: "管理者情報が見つかりません。" }, { status: 403 });
     }
 
@@ -79,7 +79,7 @@ export async function POST(request: Request) {
 
     await prisma.lineDeliveryTriggerSetting.create({
       data: {
-        officialAccountId: adminUser.officialAccountId ?? null,
+        officialAccountId: adminUser.officialAccountId,
         title: parsed.data.title,
         triggerType: parsed.data.triggerType,
         notificationText: parsed.data.notificationText,

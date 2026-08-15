@@ -39,6 +39,7 @@ export default async function AdminSpotDeliveryNewPage() {
   const adminUser = await requireAdminUser();
   const [gifts, templates, targetCount, ranks] = await Promise.all([
     prisma.gift.findMany({
+      where: { officialAccountId: adminUser.officialAccountId! },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -56,7 +57,7 @@ export default async function AdminSpotDeliveryNewPage() {
       take: 100,
     }),
     prisma.user.count({
-      where: adminUser.officialAccountId ? { officialAccountId: adminUser.officialAccountId } : undefined,
+      where: { officialAccountId: adminUser.officialAccountId! },
     }),
     prisma.rank.findMany({
       orderBy: { minPoints: "asc" },

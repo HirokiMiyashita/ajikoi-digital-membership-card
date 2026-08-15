@@ -15,9 +15,9 @@ export async function GET(request: Request) {
 
   const adminUser = await prisma.adminUser.findUnique({
     where: { id: adminId },
-    select: { id: true },
+    select: { id: true, officialAccountId: true },
   });
-  if (!adminUser) {
+  if (!adminUser?.officialAccountId) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
@@ -25,6 +25,9 @@ export async function GET(request: Request) {
   const pathname = searchParams.get("pathname");
   if (!pathname) {
     return NextResponse.json({ ok: false, message: "pathname is required" }, { status: 400 });
+  }
+  if (!pathname.startsWith(`stores/${adminUser.officialAccountId}/`)) {
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
   const result = await get(pathname, {

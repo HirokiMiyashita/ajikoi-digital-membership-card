@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
-
+import { adminAuth } from "@/lib/admin-auth";
 import AdminShell from "./admin-shell";
 
 export const metadata: Metadata = {
-  title: "管理画面 | あの味が恋しい。",
+  title: "店舗管理 | デジタル会員証",
   manifest: "/admin/manifest.webmanifest",
   appleWebApp: {
     capable: true,
-    title: "あじ恋 管理",
+    title: "店舗管理",
     statusBarStyle: "default",
   },
   icons: {
-    icon: [{ url: "/ajikoi-logo.png", sizes: "1024x1024", type: "image/png" }],
-    apple: [{ url: "/ajikoi-logo.png", sizes: "1024x1024", type: "image/png" }],
+    icon: [{ url: "/favicon.ico" }],
+    apple: [{ url: "/favicon.ico" }],
   },
 };
 
@@ -21,5 +21,20 @@ export default async function AdminLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return <AdminShell>{children}</AdminShell>;
+  const session = await adminAuth.api.getSession();
+
+  return (
+    <AdminShell
+      currentUser={
+        session
+          ? {
+              name: session.user.name,
+              image: session.user.image ?? null,
+            }
+          : null
+      }
+    >
+      {children}
+    </AdminShell>
+  );
 }

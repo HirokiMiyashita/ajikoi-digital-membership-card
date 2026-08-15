@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     where: { id: adminId },
     select: { id: true, officialAccountId: true },
   });
-  if (!adminUser) {
+  if (!adminUser?.officialAccountId) {
     return Response.json(
       { ok: false, message: "管理者権限がありません。" },
       { status: 403 },
@@ -25,6 +25,7 @@ export async function GET(request: Request) {
   }
 
   const gifts = await prisma.gift.findMany({
+    where: { officialAccountId: adminUser.officialAccountId! },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,
@@ -37,9 +38,7 @@ export async function GET(request: Request) {
   });
 
   const users = await prisma.user.findMany({
-    where: adminUser.officialAccountId
-      ? { officialAccountId: adminUser.officialAccountId }
-      : undefined,
+    where: { officialAccountId: adminUser.officialAccountId },
     orderBy: { createdAt: "desc" },
     select: {
       userId: true,
