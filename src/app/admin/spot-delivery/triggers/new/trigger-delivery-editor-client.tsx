@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type TriggerType = "USER_SIGNUP" | "CHECKIN_POINT_GRANTED" | "RANK_UP" | "BIRTHDAY" | "GIFT_EXPIRES";
 type DeliveryVisitCountSegment = "ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE";
@@ -9,6 +9,23 @@ type LineTextMessage = { type: "text"; text: string };
 type LineImageMessage = { type: "image"; originalContentUrl: string; previewImageUrl: string };
 type LineFlexMessage = { type: "flex"; altText: string; contents: Record<string, unknown> };
 type LineMessage = LineTextMessage | LineImageMessage | LineFlexMessage;
+type TextEditorMessage = { id: string; type: "text"; text: string };
+type ImageEditorMessage = {
+  id: string;
+  type: "image";
+  file: File | null;
+  uploadedUrl: string | null;
+  previewUrl: string | null;
+};
+type GiftEditorMessage = {
+  id: string;
+  type: "gift";
+  gift: GiftOption | null;
+  existingMessage: LineFlexMessage | null;
+};
+type EditorMessage = TextEditorMessage | ImageEditorMessage | GiftEditorMessage;
+
+const MAX_MESSAGE_COUNT = 5;
 
 type GiftOption = {
   id: string;
@@ -74,6 +91,53 @@ function parseInitialMessages(rawMessages: unknown, fallbackMessage: string): Li
   return parsed;
 }
 
+function getFlexHeroUrl(message: LineFlexMessage): string | null {
+  const hero = message.contents.hero;
+  if (!hero || typeof hero !== "object") return null;
+  const url = (hero as { url?: unknown }).url;
+  return typeof url === "string" ? url : null;
+}
+
+function getFlexTitle(message: LineFlexMessage): string {
+  const body = message.contents.body;
+  if (!body || typeof body !== "object") return message.altText;
+  const contents = (body as { contents?: unknown }).contents;
+  if (!Array.isArray(contents)) return message.altText;
+  const title = contents.find(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      (item as { type?: unknown }).type === "text" &&
+      typeof (item as { text?: unknown }).text === "string",
+  ) as { text?: string } | undefined;
+  return title?.text ?? message.altText;
+}
+
+function createInitialEditorMessages(messages: LineMessage[], gifts: GiftOption[]): EditorMessage[] {
+  return messages.map((message, index) => {
+    const id = `initial-message-${index}`;
+    if (message.type === "text") {
+      return { id, type: "text", text: message.text };
+    }
+    if (message.type === "image") {
+      return {
+        id,
+        type: "image",
+        file: null,
+        uploadedUrl: message.originalContentUrl,
+        previewUrl: message.previewImageUrl,
+      };
+    }
+    const heroUrl = getFlexHeroUrl(message);
+    return {
+      id,
+      type: "gift",
+      gift: heroUrl ? gifts.find((gift) => gift.lineImageUrl === heroUrl) ?? null : null,
+      existingMessage: message,
+    };
+  });
+}
+
 export default function TriggerDeliveryEditorClient({
   gifts,
   rankOptions,
@@ -85,30 +149,19 @@ export default function TriggerDeliveryEditorClient({
     () => parseInitialMessages(initialValue?.messages, initialValue?.message ?? ""),
     [initialValue?.message, initialValue?.messages],
   );
-  const initialTextMessage = initialMessages.find((item) => item.type === "text");
-  const initialImageMessage = initialMessages.find((item) => item.type === "image");
-  const initialFlexMessage = initialMessages.find((item) => item.type === "flex");
-  const initialFlexHeroUrl =
-    initialFlexMessage && typeof initialFlexMessage.contents.hero === "object" && initialFlexMessage.contents.hero
-      ? (initialFlexMessage.contents.hero as { url?: unknown }).url
-      : null;
-  const initialGift =
-    typeof initialFlexHeroUrl === "string"
-      ? gifts.find((gift) => gift.lineImageUrl === initialFlexHeroUrl) ?? null
-      : null;
+  const initialEditorMessages = useMemo(
+    () => createInitialEditorMessages(initialMessages, gifts),
+    [gifts, initialMessages],
+  );
 
   const [title, setTitle] = useState(initialValue?.title ?? "");
   const [activeTab, setActiveTab] = useState<"content" | "segment">("content");
   const [triggerType, setTriggerType] = useState<TriggerType>(initialValue?.triggerType ?? "USER_SIGNUP");
   const [notificationText, setNotificationText] = useState(initialValue?.notificationText ?? "");
-  const [message, setMessage] = useState(initialTextMessage?.text ?? initialValue?.message ?? "");
-  const [showTextElement, setShowTextElement] = useState(Boolean(initialTextMessage || initialValue?.message));
-  const [showImageElement, setShowImageElement] = useState(Boolean(initialImageMessage));
-  const [showGiftElement, setShowGiftElement] = useState(Boolean(initialFlexMessage));
-  const [selectedGift, setSelectedGift] = useState<GiftOption | null>(initialGift);
-  const [isGiftSheetOpen, setIsGiftSheetOpen] = useState(false);
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
-  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(initialImageMessage?.originalContentUrl ?? null);
+  const [editorMessages, setEditorMessages] = useState<EditorMessage[]>(initialEditorMessages);
+  const [draggedMessageId, setDraggedMessageId] = useState<string | null>(null);
+  const [dragOverMessageId, setDragOverMessageId] = useState<string | null>(null);
+  const [giftSheetMessageId, setGiftSheetMessageId] = useState<string | null>(null);
   const [targetRankIds, setTargetRankIds] = useState<string[]>(initialValue?.targetRankIds ?? []);
   const [targetGender, setTargetGender] = useState<"male" | "female" | "other" | null>(initialValue?.targetGender ?? null);
   const [targetVisitCountSegments, setTargetVisitCountSegments] = useState<DeliveryVisitCountSegment[]>(
@@ -121,26 +174,20 @@ export default function TriggerDeliveryEditorClient({
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const nextMessageIdRef = useRef(0);
+  const imageInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const objectUrlsRef = useRef<Set<string>>(new Set());
 
   const canSubmit = useMemo(() => {
-    const hasContent = showTextElement || showImageElement || showGiftElement;
-    if (!hasContent) return false;
-    if (showTextElement && message.trim().length === 0) return false;
-    if (showImageElement && !selectedImageFile && !uploadedImageUrl) return false;
-    if (showGiftElement && !selectedGift) return false;
+    if (editorMessages.length === 0 || editorMessages.length > MAX_MESSAGE_COUNT) return false;
+    const hasInvalidMessage = editorMessages.some((item) => {
+      if (item.type === "text") return item.text.trim().length === 0;
+      if (item.type === "image") return !item.file && !item.uploadedUrl;
+      return !item.gift && !item.existingMessage;
+    });
+    if (hasInvalidMessage) return false;
     return title.trim().length > 0 && !isSaving;
-  }, [
-    isSaving,
-    message,
-    selectedGift,
-    selectedImageFile,
-    showGiftElement,
-    showImageElement,
-    showTextElement,
-    title,
-    uploadedImageUrl,
-  ]);
+  }, [editorMessages, isSaving, title]);
 
   const showToast = (text: string, error = false) => {
     setToast(text);
@@ -152,145 +199,227 @@ export default function TriggerDeliveryEditorClient({
     showToast("下書きを保存しました。");
   };
 
-  const imagePreviewUrl = useMemo(
-    () => (selectedImageFile ? URL.createObjectURL(selectedImageFile) : initialImageMessage?.previewImageUrl ?? null),
-    [initialImageMessage?.previewImageUrl, selectedImageFile],
-  );
-  useEffect(
-    () => () => {
-      if (imagePreviewUrl?.startsWith("blob:")) {
-        URL.revokeObjectURL(imagePreviewUrl);
-      }
-    },
-    [imagePreviewUrl],
-  );
   useEffect(() => {
-    const allowNegative = triggerType === "BIRTHDAY" || triggerType === "GIFT_EXPIRES";
-    if (!allowNegative && delayDays < 0) {
-      setDelayDays(0);
+    const objectUrls = objectUrlsRef.current;
+    return () => {
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+      objectUrls.clear();
+    };
+  }, []);
+  const createMessageId = () => {
+    const id = `new-message-${nextMessageIdRef.current}`;
+    nextMessageIdRef.current += 1;
+    return id;
+  };
+
+  const addTextMessage = () => {
+    if (editorMessages.length >= MAX_MESSAGE_COUNT) return;
+    const id = createMessageId();
+    setEditorMessages((prev) =>
+      prev.length >= MAX_MESSAGE_COUNT ? prev : [...prev, { id, type: "text", text: "" }],
+    );
+  };
+
+  const addImageMessage = () => {
+    if (editorMessages.length >= MAX_MESSAGE_COUNT) return;
+    const id = createMessageId();
+    setEditorMessages((prev) =>
+      prev.length >= MAX_MESSAGE_COUNT
+        ? prev
+        : [...prev, { id, type: "image", file: null, uploadedUrl: null, previewUrl: null }],
+    );
+    setTimeout(() => imageInputRefs.current[id]?.click(), 0);
+  };
+
+  const addGiftMessage = () => {
+    if (editorMessages.length >= MAX_MESSAGE_COUNT) return;
+    const id = createMessageId();
+    setEditorMessages((prev) =>
+      prev.length >= MAX_MESSAGE_COUNT
+        ? prev
+        : [...prev, { id, type: "gift", gift: null, existingMessage: null }],
+    );
+    setGiftSheetMessageId(id);
+  };
+
+  const removeMessage = (id: string) => {
+    const target = editorMessages.find((item) => item.id === id);
+    if (target?.type === "image" && target.previewUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(target.previewUrl);
+      objectUrlsRef.current.delete(target.previewUrl);
     }
-  }, [triggerType, delayDays]);
-
-  const openImagePicker = () => {
-    setShowImageElement(true);
-    imageInputRef.current?.click();
+    delete imageInputRefs.current[id];
+    setEditorMessages((prev) => prev.filter((item) => item.id !== id));
+    setGiftSheetMessageId((current) => (current === id ? null : current));
   };
 
-  const openGiftSheet = () => {
-    setShowGiftElement(true);
-    setIsGiftSheetOpen(true);
+  const moveMessage = (sourceId: string, destinationId: string) => {
+    if (sourceId === destinationId) return;
+    setEditorMessages((prev) => {
+      const sourceIndex = prev.findIndex((item) => item.id === sourceId);
+      const destinationIndex = prev.findIndex((item) => item.id === destinationId);
+      if (sourceIndex < 0 || destinationIndex < 0) return prev;
+      const reordered = [...prev];
+      const [moved] = reordered.splice(sourceIndex, 1);
+      if (!moved) return prev;
+      reordered.splice(destinationIndex, 0, moved);
+      return reordered;
+    });
   };
 
-  const handleImageFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleDragStart = (event: DragEvent<HTMLElement>, messageId: string) => {
+    setDraggedMessageId(messageId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", messageId);
+  };
+
+  const finishDragging = () => {
+    setDraggedMessageId(null);
+    setDragOverMessageId(null);
+  };
+
+  const handleImageFileChange = (id: string, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
     if (!file) return;
-    setSelectedImageFile(file);
-    setUploadedImageUrl(null);
+    const previewUrl = URL.createObjectURL(file);
+    objectUrlsRef.current.add(previewUrl);
+    const currentMessage = editorMessages.find((item) => item.id === id);
+    if (currentMessage?.type === "image" && currentMessage.previewUrl?.startsWith("blob:")) {
+      URL.revokeObjectURL(currentMessage.previewUrl);
+      objectUrlsRef.current.delete(currentMessage.previewUrl);
+    }
+    setEditorMessages((prev) =>
+      prev.map((item) => {
+        if (item.id !== id || item.type !== "image") return item;
+        return { ...item, file, uploadedUrl: null, previewUrl };
+      }),
+    );
+    event.target.value = "";
   };
 
-  const uploadSelectedImageIfNeeded = async () => {
-    if (!showImageElement) return uploadedImageUrl;
-    if (!selectedImageFile) return uploadedImageUrl;
-    if (uploadedImageUrl) return uploadedImageUrl;
+  const uploadImage = async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/admin/gifts/upload", {
+      method: "POST",
+      body: formData,
+    });
+    const json = (await response.json()) as { ok: boolean; imagePath?: string; message?: string };
+    if (!response.ok || !json.ok || !json.imagePath) {
+      throw new Error(json.message ?? "画像アップロードに失敗しました。");
+    }
+    return json.imagePath;
+  };
 
+  const buildGiftMessage = (item: GiftEditorMessage): LineFlexMessage => {
+    if (item.existingMessage) {
+      return {
+        ...item.existingMessage,
+        altText:
+          notificationText.trim() ||
+          item.existingMessage.altText ||
+          item.gift?.title ||
+          getFlexTitle(item.existingMessage),
+      };
+    }
+    if (!item.gift) {
+      throw new Error("ギフトを選択してください。");
+    }
+    if (!item.gift.lineImageUrl) {
+      throw new Error("選択したギフト画像はLINEから参照できません。ギフト画像を再保存してください。");
+    }
+    if (/\.svg(\?|$)/i.test(item.gift.lineImageUrl)) {
+      throw new Error("テンプレートSVG画像はLINE Flexで表示できません。PNG/JPEG画像のギフトを選択してください。");
+    }
+    const buttonUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/?giftId=${encodeURIComponent(item.gift.id)}`
+        : `https://example.com/?giftId=${encodeURIComponent(item.gift.id)}`;
+    return {
+      type: "flex",
+      altText: notificationText.trim() || item.gift.title,
+      contents: {
+        type: "bubble",
+        hero: {
+          type: "image",
+          url: item.gift.lineImageUrl,
+          size: "full",
+          aspectRatio: "4:3",
+          aspectMode: "cover",
+        },
+        body: {
+          type: "box",
+          layout: "vertical",
+          spacing: "sm",
+          contents: [
+            {
+              type: "text",
+              text: item.gift.title,
+              weight: "bold",
+              size: "xl",
+              wrap: true,
+            },
+            {
+              type: "text",
+              text: item.gift.usageGuide?.trim() || "タップして獲得してください",
+              size: "sm",
+              color: "#6b7280",
+              wrap: true,
+            },
+          ],
+        },
+        footer: {
+          type: "box",
+          layout: "vertical",
+          contents: [
+            {
+              type: "button",
+              style: "primary",
+              color: "#0f9f99",
+              action: {
+                type: "uri",
+                label: "このギフトを獲得する",
+                uri: buttonUrl,
+              },
+            },
+          ],
+        },
+      },
+    };
+  };
+
+  const buildLineMessages = async (): Promise<LineMessage[]> => {
     setIsUploadingImage(true);
     try {
-      const formData = new FormData();
-      formData.append("file", selectedImageFile);
-      const response = await fetch("/api/admin/gifts/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const json = (await response.json()) as { ok: boolean; imagePath?: string; message?: string };
-      if (!response.ok || !json.ok || !json.imagePath) {
-        throw new Error(json.message ?? "画像アップロードに失敗しました。");
+      const lineMessages: LineMessage[] = [];
+      const uploadedUrls = new Map<string, string>();
+      for (const item of editorMessages) {
+        if (item.type === "text") {
+          lineMessages.push({ type: "text", text: item.text.trim() });
+          continue;
+        }
+        if (item.type === "image") {
+          const imageUrl = item.file ? await uploadImage(item.file) : item.uploadedUrl;
+          if (!imageUrl) throw new Error("画像を選択してください。");
+          uploadedUrls.set(item.id, imageUrl);
+          lineMessages.push({ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl });
+          continue;
+        }
+        lineMessages.push(buildGiftMessage(item));
       }
-      setUploadedImageUrl(json.imagePath);
-      return json.imagePath;
+      if (uploadedUrls.size > 0) {
+        setEditorMessages((prev) =>
+          prev.map((item) =>
+            item.type === "image" && uploadedUrls.has(item.id)
+              ? { ...item, file: null, uploadedUrl: uploadedUrls.get(item.id) ?? item.uploadedUrl }
+              : item,
+          ),
+        );
+      }
+      return lineMessages;
     } finally {
       setIsUploadingImage(false);
     }
-  };
-
-  const buildLineMessages = (imageUrl: string | null): LineMessage[] => {
-    const lineMessages: LineMessage[] = [];
-    if (showTextElement && message.trim()) {
-      lineMessages.push({
-        type: "text",
-        text: message.trim(),
-      });
-    }
-    if (showImageElement && imageUrl) {
-      lineMessages.push({
-        type: "image",
-        originalContentUrl: imageUrl,
-        previewImageUrl: imageUrl,
-      });
-    }
-    if (showGiftElement && selectedGift) {
-      if (!selectedGift.lineImageUrl) {
-        throw new Error("選択したギフト画像はLINEから参照できません。ギフト画像を再保存してください。");
-      }
-      if (/\.svg(\?|$)/i.test(selectedGift.lineImageUrl)) {
-        throw new Error("テンプレートSVG画像はLINE Flexで表示できません。PNG/JPEG画像のギフトを選択してください。");
-      }
-      const buttonUrl =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/?giftId=${encodeURIComponent(selectedGift.id)}`
-          : `https://example.com/?giftId=${encodeURIComponent(selectedGift.id)}`;
-      lineMessages.push({
-        type: "flex",
-        altText: selectedGift.title,
-        contents: {
-          type: "bubble",
-          hero: {
-            type: "image",
-            url: selectedGift.lineImageUrl,
-            size: "full",
-            aspectRatio: "4:3",
-            aspectMode: "cover",
-          },
-          body: {
-            type: "box",
-            layout: "vertical",
-            spacing: "sm",
-            contents: [
-              {
-                type: "text",
-                text: selectedGift.title,
-                weight: "bold",
-                size: "xl",
-                wrap: true,
-              },
-              {
-                type: "text",
-                text: selectedGift.usageGuide?.trim() || "タップして獲得してください",
-                size: "sm",
-                color: "#6b7280",
-                wrap: true,
-              },
-            ],
-          },
-          footer: {
-            type: "box",
-            layout: "vertical",
-            contents: [
-              {
-                type: "button",
-                style: "primary",
-                color: "#0f9f99",
-                action: {
-                  type: "uri",
-                  label: "このギフトを獲得する",
-                  uri: buttonUrl,
-                },
-              },
-            ],
-          },
-        },
-      });
-    }
-    return lineMessages;
   };
 
   const triggerTypeLabel: Record<TriggerType, string> = {
@@ -331,8 +460,7 @@ export default function TriggerDeliveryEditorClient({
 
     setIsSaving(true);
     try {
-      const imageUrl = await uploadSelectedImageIfNeeded();
-      const lineMessages = buildLineMessages(imageUrl ?? null);
+      const lineMessages = await buildLineMessages();
       if (lineMessages.length === 0) {
         showToast("配信メッセージを1つ以上追加してください。", true);
         return;
@@ -386,7 +514,8 @@ export default function TriggerDeliveryEditorClient({
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder={mode === "edit" ? "トリガー配信タイトル" : "タイトル未設定"}
+              placeholder="管理用タイトル"
+              aria-label="管理用タイトル（配信履歴と設定一覧に表示）"
               className="w-56 rounded border border-transparent px-2 py-1 text-base font-bold outline-none focus:border-[#cbd5e1]"
             />
           </div>
@@ -439,19 +568,26 @@ export default function TriggerDeliveryEditorClient({
               <>
             <section className="space-y-3 rounded-lg border border-[#e2e8f0] p-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-[#334155]">通知テキスト</p>
+                <p className="text-sm font-semibold text-[#334155]">Flex通知表示テキスト（任意）</p>
               </div>
               <input
                 value={notificationText}
                 onChange={(event) => setNotificationText(event.target.value)}
-                placeholder="ロック画面用のテキスト"
+                maxLength={400}
+                placeholder="ギフト通知に表示。未入力の場合はギフト名"
                 className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
               />
               <label className="block space-y-1">
                 <span className="text-sm font-semibold text-[#334155]">トリガー条件</span>
                 <select
                   value={triggerType}
-                  onChange={(event) => setTriggerType(event.target.value as TriggerType)}
+                  onChange={(event) => {
+                    const nextTriggerType = event.target.value as TriggerType;
+                    setTriggerType(nextTriggerType);
+                    if (nextTriggerType !== "BIRTHDAY" && nextTriggerType !== "GIFT_EXPIRES" && delayDays < 0) {
+                      setDelayDays(0);
+                    }
+                  }}
                   className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f9f99]"
                 >
                   <option value="USER_SIGNUP">会員登録時</option>
@@ -508,126 +644,182 @@ export default function TriggerDeliveryEditorClient({
               </label>
             </section>
 
-            {showTextElement ? (
-              <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                <p className="text-sm font-semibold text-[#334155]">本文テキスト</p>
-                <textarea
-                  value={message}
-                  onChange={(event) => setMessage(event.target.value)}
-                  placeholder="配信するメッセージ本文"
-                  rows={7}
-                  className="mt-2 w-full resize-y rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f9f99]"
-                />
-              </section>
-            ) : null}
-
-            {showImageElement ? (
-              <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                <p className="text-sm font-semibold text-[#334155]">画像</p>
-                <p className="mt-1 text-sm text-[#64748b]">画像を選択できます</p>
-                <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
-                        {imagePreviewUrl ? (
-                          <img src={imagePreviewUrl} alt="選択画像プレビュー" className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">画像</div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-[#64748b]">画像</p>
-                        <p className="truncate text-lg font-semibold text-[#0f172a]">
-                          {selectedImageFile?.name ?? (uploadedImageUrl ? "設定済み画像" : "未設定")}
-                        </p>
-                      </div>
-                    </div>
+            {editorMessages.map((item) => (
+              <section
+                key={item.id}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                }}
+                onDragEnter={() => {
+                  setDragOverMessageId(item.id);
+                  if (draggedMessageId) moveMessage(draggedMessageId, item.id);
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  finishDragging();
+                }}
+                className={`mt-3 rounded-lg border p-3 transition ${
+                  dragOverMessageId === item.id
+                    ? "border-[#0f766e] bg-[#f0fdfa]"
+                    : "border-[#e2e8f0]"
+                } ${draggedMessageId === item.id ? "opacity-60" : ""}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={openImagePicker}
-                      disabled={isUploadingImage}
-                      className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                      draggable
+                      onDragStart={(event) => handleDragStart(event, item.id)}
+                      onDragEnd={finishDragging}
+                      aria-label="ドラッグして並べ替え"
+                      title="ドラッグして並べ替え"
+                      className="cursor-grab rounded px-1.5 py-1 text-lg leading-none text-[#94a3b8] active:cursor-grabbing"
                     >
-                      {isUploadingImage ? "アップロード中..." : "変更"}
+                      ⠿
+                    </button>
+                    <p className="text-sm font-semibold text-[#334155]">
+                      {item.type === "text" ? "本文テキスト" : item.type === "image" ? "画像" : "ギフト"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => removeMessage(item.id)}
+                      className="rounded border border-[#fecaca] px-2 py-1 text-xs font-semibold text-[#b91c1c]"
+                    >
+                      削除
                     </button>
                   </div>
                 </div>
-                <input
-                  ref={imageInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageFileChange}
-                />
-              </section>
-            ) : null}
 
-            {showGiftElement ? (
-              <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                <p className="text-sm font-semibold text-[#334155]">ギフト</p>
-                <p className="mt-1 text-sm text-[#64748b]">配信に使用するギフトを設定できます</p>
-                <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
-                        {selectedGift ? (
-                          <img src={selectedGift.previewImageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">🎁</div>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="text-sm text-[#64748b]">ギフト</p>
-                        <p className="truncate text-lg font-semibold text-[#0f172a]">
-                          {selectedGift?.title ?? "未設定"}
-                        </p>
+                {item.type === "text" ? (
+                  <textarea
+                    value={item.text}
+                    onChange={(event) => {
+                      const text = event.target.value;
+                      setEditorMessages((prev) =>
+                        prev.map((messageItem) =>
+                          messageItem.id === item.id && messageItem.type === "text"
+                            ? { ...messageItem, text }
+                            : messageItem,
+                        ),
+                      );
+                    }}
+                    placeholder="配信するメッセージ本文"
+                    rows={7}
+                    className="mt-2 w-full resize-y rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f9f99]"
+                  />
+                ) : null}
+
+                {item.type === "image" ? (
+                  <>
+                    <p className="mt-1 text-sm text-[#64748b]">画像を選択できます</p>
+                    <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
+                            {item.previewUrl ? (
+                              <img src={item.previewUrl} alt="選択画像プレビュー" className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">画像</div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm text-[#64748b]">画像</p>
+                            <p className="truncate text-lg font-semibold text-[#0f172a]">
+                              {item.file?.name ?? (item.uploadedUrl ? "設定済み画像" : "未設定")}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => imageInputRefs.current[item.id]?.click()}
+                          disabled={isUploadingImage}
+                          className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                        >
+                          {isUploadingImage ? "アップロード中..." : "変更"}
+                        </button>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={openGiftSheet}
-                      className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
-                    >
-                      変更
-                    </button>
-                  </div>
-                </div>
+                    <input
+                      ref={(element) => {
+                        imageInputRefs.current[item.id] = element;
+                      }}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => handleImageFileChange(item.id, event)}
+                    />
+                  </>
+                ) : null}
+
+                {item.type === "gift" ? (
+                  <>
+                    <p className="mt-1 text-sm text-[#64748b]">配信に使用するギフトを設定できます</p>
+                    <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
+                            {item.gift?.previewImageUrl || (item.existingMessage && getFlexHeroUrl(item.existingMessage)) ? (
+                              <img
+                                src={item.gift?.previewImageUrl ?? getFlexHeroUrl(item.existingMessage!)!}
+                                alt={item.gift?.title ?? getFlexTitle(item.existingMessage!)}
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">🎁</div>
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm text-[#64748b]">ギフト</p>
+                            <p className="truncate text-lg font-semibold text-[#0f172a]">
+                              {item.gift?.title ??
+                                (item.existingMessage ? getFlexTitle(item.existingMessage) : "未設定")}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setGiftSheetMessageId(item.id)}
+                          className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                        >
+                          変更
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : null}
               </section>
-            ) : null}
+            ))}
 
             <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-              <p className="text-sm font-semibold text-[#334155]">追加する要素</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-[#334155]">追加する要素</p>
+                <p className="text-xs font-semibold text-[#64748b]">{editorMessages.length} / 5件</p>
+              </div>
               <div className="mt-3 grid grid-cols-5 gap-2 text-center text-xs text-[#334155]">
                 <button
                   type="button"
-                  onClick={() => setShowTextElement(true)}
-                  className={`rounded border px-2 py-3 ${
-                    showTextElement
-                      ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
-                      : "border-[#dbe2ea] bg-[#f8fafc]"
-                  }`}
+                  onClick={addTextMessage}
+                  disabled={editorMessages.length >= MAX_MESSAGE_COUNT}
+                  className="rounded border border-[#dbe2ea] bg-[#f8fafc] px-2 py-3 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   テキスト
                 </button>
                 <button
                   type="button"
-                  onClick={openImagePicker}
-                  className={`rounded border px-2 py-3 ${
-                    showImageElement
-                      ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
-                      : "border-[#dbe2ea] bg-[#f8fafc]"
-                  }`}
+                  onClick={addImageMessage}
+                  disabled={editorMessages.length >= MAX_MESSAGE_COUNT}
+                  className="rounded border border-[#dbe2ea] bg-[#f8fafc] px-2 py-3 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   画像
                 </button>
                 <button
                   type="button"
-                  onClick={openGiftSheet}
-                  className={`rounded border px-2 py-3 ${
-                    showGiftElement
-                      ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
-                      : "border-[#dbe2ea] bg-[#f8fafc]"
-                  }`}
+                  onClick={addGiftMessage}
+                  disabled={editorMessages.length >= MAX_MESSAGE_COUNT}
+                  className="rounded border border-[#dbe2ea] bg-[#f8fafc] px-2 py-3 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   ギフト
                 </button>
@@ -716,56 +908,69 @@ export default function TriggerDeliveryEditorClient({
             <div className="mx-auto w-full max-w-[320px] rounded-2xl bg-[#84a5d3] p-3 shadow-inner">
               <div className="mb-3 h-10 w-10 rounded-full bg-[#6d8fbe]" />
 
-              {showTextElement ? (
-                <div className="mb-3 w-fit max-w-[92%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 shadow-sm">
-                  <p className="whitespace-pre-wrap text-[15px] text-[#0f172a]">
-                    {message.trim() || "配信メッセージを入力するとここに表示されます。"}
-                  </p>
-                  <p className="mt-2 text-[11px] font-semibold text-[#94a3b8]">
-                    type: text / trigger: {triggerTypeLabel[triggerType]}
-                  </p>
-                </div>
-              ) : null}
-
-              {showImageElement ? (
-                <div className="mb-3 w-[92%] overflow-hidden rounded-2xl bg-white shadow-sm">
-                  {imagePreviewUrl ? (
-                    <img src={imagePreviewUrl} alt="LINE画像メッセージプレビュー" className="h-44 w-full object-cover" />
-                  ) : (
-                    <div className="flex h-44 items-center justify-center text-xs text-[#94a3b8]">画像未設定</div>
-                  )}
-                  <div className="px-3 py-2">
-                    <p className="text-[11px] font-semibold text-[#94a3b8]">type: image / trigger: {triggerTypeLabel[triggerType]}</p>
+              {editorMessages.map((item) => {
+                if (item.type === "text") {
+                  return (
+                    <div key={item.id} className="mb-3 w-fit max-w-[92%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 shadow-sm">
+                      <p className="whitespace-pre-wrap text-[15px] text-[#0f172a]">
+                        {item.text.trim() || "配信メッセージを入力するとここに表示されます。"}
+                      </p>
+                      <p className="mt-2 text-[11px] font-semibold text-[#94a3b8]">
+                        type: text / trigger: {triggerTypeLabel[triggerType]}
+                      </p>
+                    </div>
+                  );
+                }
+                if (item.type === "image") {
+                  return (
+                    <div key={item.id} className="mb-3 w-[92%] overflow-hidden rounded-2xl bg-white shadow-sm">
+                      {item.previewUrl ? (
+                        <img src={item.previewUrl} alt="LINE画像メッセージプレビュー" className="h-44 w-full object-cover" />
+                      ) : (
+                        <div className="flex h-44 items-center justify-center text-xs text-[#94a3b8]">画像未設定</div>
+                      )}
+                      <div className="px-3 py-2">
+                        <p className="text-[11px] font-semibold text-[#94a3b8]">
+                          type: image / trigger: {triggerTypeLabel[triggerType]}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+                const existingHeroUrl = item.existingMessage ? getFlexHeroUrl(item.existingMessage) : null;
+                const giftTitle =
+                  item.gift?.title ?? (item.existingMessage ? getFlexTitle(item.existingMessage) : "ギフト未設定");
+                return (
+                  <div key={item.id} className="mb-3 w-[92%] overflow-hidden rounded-2xl bg-white shadow-sm">
+                    <div className="h-52 w-full overflow-hidden bg-[#d1fae5]">
+                      {item.gift?.previewImageUrl || existingHeroUrl ? (
+                        <img
+                          src={item.gift?.previewImageUrl ?? existingHeroUrl ?? ""}
+                          alt={giftTitle}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-[#94a3b8]">ギフト画像未設定</div>
+                      )}
+                    </div>
+                    <div className="space-y-2 p-4">
+                      <p className="text-3xl font-bold leading-tight text-[#111827]">{giftTitle}</p>
+                      <p className="text-sm text-[#6b7280]">
+                        {item.gift?.usageGuide?.trim() || "タップして獲得してください"}
+                      </p>
+                      <button
+                        type="button"
+                        className="w-full rounded-lg bg-[#0f9f99] px-3 py-3 text-base font-bold text-white"
+                      >
+                        このギフトを獲得する
+                      </button>
+                      <p className="text-[11px] font-semibold text-[#94a3b8]">
+                        type: flex / trigger: {triggerTypeLabel[triggerType]}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ) : null}
-
-              {showGiftElement ? (
-                <div className="mb-3 w-[92%] overflow-hidden rounded-2xl bg-white shadow-sm">
-                  <div className="h-52 w-full overflow-hidden bg-[#d1fae5]">
-                    {selectedGift ? (
-                      <img src={selectedGift.previewImageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-sm text-[#94a3b8]">ギフト画像未設定</div>
-                    )}
-                  </div>
-                  <div className="space-y-2 p-4">
-                    <p className="text-3xl font-bold leading-tight text-[#111827]">
-                      {selectedGift?.title ?? "ギフト未設定"}
-                    </p>
-                    <p className="text-sm text-[#6b7280]">
-                      {selectedGift?.usageGuide?.trim() || "タップして獲得してください"}
-                    </p>
-                    <button
-                      type="button"
-                      className="w-full rounded-lg bg-[#0f9f99] px-3 py-3 text-base font-bold text-white"
-                    >
-                      このギフトを獲得する
-                    </button>
-                    <p className="text-[11px] font-semibold text-[#94a3b8]">type: flex / trigger: {triggerTypeLabel[triggerType]}</p>
-                  </div>
-                </div>
-              ) : null}
+                );
+              })}
               <div className="text-right text-xs text-[#5f7fa8]">07:19</div>
             </div>
           </aside>
@@ -780,13 +985,13 @@ export default function TriggerDeliveryEditorClient({
           {toast}
         </div>
       ) : null}
-      {isGiftSheetOpen ? (
+      {giftSheetMessageId ? (
         <div className="fixed inset-0 z-50 bg-black/30">
           <button
             type="button"
             aria-label="close gift sheet"
             className="absolute inset-0"
-            onClick={() => setIsGiftSheetOpen(false)}
+            onClick={() => setGiftSheetMessageId(null)}
           />
           <section className="absolute inset-x-0 bottom-0 rounded-t-2xl bg-white p-4 shadow-2xl">
             <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-[#cbd5e1]" />
@@ -802,12 +1007,22 @@ export default function TriggerDeliveryEditorClient({
                     key={gift.id}
                     type="button"
                     onClick={() => {
-                      setSelectedGift(gift);
-                      setShowGiftElement(true);
-                      setIsGiftSheetOpen(false);
+                      setEditorMessages((prev) =>
+                        prev.map((item) =>
+                          item.id === giftSheetMessageId && item.type === "gift"
+                            ? { ...item, gift, existingMessage: null }
+                            : item,
+                        ),
+                      );
+                      setGiftSheetMessageId(null);
                     }}
                     className={`flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left ${
-                      selectedGift?.id === gift.id
+                      editorMessages.some(
+                        (item) =>
+                          item.id === giftSheetMessageId &&
+                          item.type === "gift" &&
+                          item.gift?.id === gift.id,
+                      )
                         ? "border-[#0f766e] bg-[#ecfeff]"
                         : "border-[#e2e8f0] bg-white"
                     }`}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type GiftOption = {
   id: string;
@@ -37,20 +37,37 @@ type LineFlexMessage = {
 
 type LineMessage = LineTextMessage | LineImageMessage | LineFlexMessage;
 type DeliveryVisitCountSegment = "ZERO" | "ONE" | "TWO_TO_FOUR" | "FIVE_TO_NINE" | "TEN_OR_MORE";
+type TextBlock = {
+  id: string;
+  type: "text";
+  text: string;
+};
+type ImageBlock = {
+  id: string;
+  type: "image";
+  file: File | null;
+  previewUrl: string | null;
+  uploadedUrl: string | null;
+};
+type GiftBlock = {
+  id: string;
+  type: "gift";
+  gift: GiftOption | null;
+};
+type MessageBlock = TextBlock | ImageBlock | GiftBlock;
+
+const MAX_MESSAGE_BLOCKS = 5;
+const createBlockId = () => crypto.randomUUID();
 
 export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCount }: Props) {
   const [title, setTitle] = useState("");
   const [activeTab, setActiveTab] = useState<"content" | "segment">("content");
   const [notificationText, setNotificationText] = useState("");
-  const [message, setMessage] = useState("");
-  const [showTextElement, setShowTextElement] = useState(false);
-  const [showImageElement, setShowImageElement] = useState(false);
-  const [showGiftElement, setShowGiftElement] = useState(false);
-  const [selectedGift, setSelectedGift] = useState<GiftOption | null>(null);
+  const [blocks, setBlocks] = useState<MessageBlock[]>([]);
+  const [draggedBlockId, setDraggedBlockId] = useState<string | null>(null);
+  const [dragOverBlockId, setDragOverBlockId] = useState<string | null>(null);
   const [isGiftSheetOpen, setIsGiftSheetOpen] = useState(false);
-  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
-  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
-  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [editingGiftBlockId, setEditingGiftBlockId] = useState<string | null>(null);
   const [targetRankIds, setTargetRankIds] = useState<string[]>([]);
   const [targetGender, setTargetGender] = useState<"male" | "female" | "other" | null>(null);
   const [targetVisitCountSegments, setTargetVisitCountSegments] = useState<DeliveryVisitCountSegment[]>([]);
@@ -60,24 +77,16 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [isError, setIsError] = useState(false);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const blocksRef = useRef<MessageBlock[]>([]);
 
   const canSubmit = useMemo(() => {
-    const hasContent = showTextElement || showImageElement || showGiftElement;
-    if (!hasContent) return false;
-    if (showTextElement && message.trim().length === 0) return false;
-    if (showImageElement && !selectedImageFile && !uploadedImageUrl) return false;
-    if (showGiftElement && !selectedGift) return false;
-    return true;
-  }, [
-    message,
-    selectedGift,
-    selectedImageFile,
-    showGiftElement,
-    showImageElement,
-    showTextElement,
-    uploadedImageUrl,
-  ]);
+    if (blocks.length === 0 || blocks.length > MAX_MESSAGE_BLOCKS) return false;
+    return blocks.every((block) => {
+      if (block.type === "text") return block.text.trim().length > 0;
+      if (block.type === "image") return Boolean(block.file || block.uploadedUrl);
+      return Boolean(block.gift);
+    });
+  }, [blocks]);
   const visitCountSegmentOptions: Array<{ value: DeliveryVisitCountSegment; label: string }> = [
     { value: "ZERO", label: "0回" },
     { value: "ONE", label: "1回" },
@@ -140,89 +149,171 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
   };
 
   useEffect(() => {
-    if (!selectedImageFile) {
-      setImagePreviewUrl(null);
+    blocksRef.current = blocks;
+  }, [blocks]);
+
+  useEffect(() => {
+    return () => {
+      blocksRef.current.forEach((block) => {
+        if (block.type === "image" && block.previewUrl) {
+          URL.revokeObjectURL(block.previewUrl);
+        }
+      });
+    };
+  }, []);
+
+  const addBlock = (type: MessageBlock["type"]) => {
+    if (blocks.length >= MAX_MESSAGE_BLOCKS) return;
+    const id = createBlockId();
+    if (type === "text") {
+      setBlocks((prev) =>
+        prev.length >= MAX_MESSAGE_BLOCKS ? prev : [...prev, { id, type, text: "" }],
+      );
       return;
     }
-    const objectUrl = URL.createObjectURL(selectedImageFile);
-    setImagePreviewUrl(objectUrl);
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [selectedImageFile]);
-
-  const openImagePicker = () => {
-    setShowImageElement(true);
-    imageInputRef.current?.click();
-  };
-  const openGiftSheet = () => {
-    setShowGiftElement(true);
+    if (type === "image") {
+      setBlocks((prev) =>
+        prev.length >= MAX_MESSAGE_BLOCKS
+          ? prev
+          : [...prev, { id, type, file: null, previewUrl: null, uploadedUrl: null }],
+      );
+      return;
+    }
+    setBlocks((prev) =>
+      prev.length >= MAX_MESSAGE_BLOCKS ? prev : [...prev, { id, type, gift: null }],
+    );
+    setEditingGiftBlockId(id);
     setIsGiftSheetOpen(true);
   };
 
-  const handleImageFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0] ?? null;
-    if (!file) return;
-    setSelectedImageFile(file);
-    setUploadedImageUrl(null);
+  const openGiftSheet = (blockId: string) => {
+    setEditingGiftBlockId(blockId);
+    setIsGiftSheetOpen(true);
   };
 
-  const uploadSelectedImageIfNeeded = async () => {
-    if (!showImageElement) return uploadedImageUrl;
-    if (!selectedImageFile) return uploadedImageUrl;
-    if (uploadedImageUrl) return uploadedImageUrl;
+  const updateTextBlock = (blockId: string, text: string) => {
+    setBlocks((prev) =>
+      prev.map((block) => (block.id === blockId && block.type === "text" ? { ...block, text } : block)),
+    );
+  };
 
+  const updateImageBlock = (blockId: string, file: File) => {
+    const current = blocks.find((block) => block.id === blockId);
+    if (current?.type === "image" && current.previewUrl) {
+      URL.revokeObjectURL(current.previewUrl);
+    }
+    const previewUrl = URL.createObjectURL(file);
+    setBlocks((prev) =>
+      prev.map((block) =>
+        block.id === blockId && block.type === "image"
+          ? { ...block, file, previewUrl, uploadedUrl: null }
+          : block,
+      ),
+    );
+  };
+
+  const removeBlock = (blockId: string) => {
+    const current = blocks.find((block) => block.id === blockId);
+    if (current?.type === "image" && current.previewUrl) {
+      URL.revokeObjectURL(current.previewUrl);
+    }
+    setBlocks((prev) => prev.filter((block) => block.id !== blockId));
+    if (editingGiftBlockId === blockId) {
+      setEditingGiftBlockId(null);
+      setIsGiftSheetOpen(false);
+    }
+  };
+
+  const moveBlock = (sourceId: string, destinationId: string) => {
+    if (sourceId === destinationId) return;
+    setBlocks((prev) => {
+      const sourceIndex = prev.findIndex((block) => block.id === sourceId);
+      const destinationIndex = prev.findIndex((block) => block.id === destinationId);
+      if (sourceIndex < 0 || destinationIndex < 0) return prev;
+      const next = [...prev];
+      const [moved] = next.splice(sourceIndex, 1);
+      if (!moved) return prev;
+      next.splice(destinationIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleDragStart = (event: DragEvent<HTMLElement>, blockId: string) => {
+    setDraggedBlockId(blockId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", blockId);
+  };
+
+  const finishDragging = () => {
+    setDraggedBlockId(null);
+    setDragOverBlockId(null);
+  };
+
+  const uploadImagesIfNeeded = async (sourceBlocks: MessageBlock[]): Promise<MessageBlock[]> => {
     setIsUploadingImage(true);
     try {
-      const formData = new FormData();
-      formData.append("file", selectedImageFile);
-      const response = await fetch("/api/admin/gifts/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const json = (await response.json()) as { ok: boolean; imagePath?: string; message?: string };
-      if (!response.ok || !json.ok || !json.imagePath) {
-        throw new Error(json.message ?? "画像アップロードに失敗しました。");
-      }
-      setUploadedImageUrl(json.imagePath);
-      return json.imagePath;
+      const uploadedBlocks = await Promise.all(
+        sourceBlocks.map(async (block): Promise<MessageBlock> => {
+          if (block.type !== "image" || !block.file || block.uploadedUrl) return block;
+          const formData = new FormData();
+          formData.append("file", block.file);
+          const response = await fetch("/api/admin/gifts/upload", {
+            method: "POST",
+            body: formData,
+          });
+          const json = (await response.json()) as { ok: boolean; imagePath?: string; message?: string };
+          if (!response.ok || !json.ok || !json.imagePath) {
+            throw new Error(json.message ?? "画像アップロードに失敗しました。");
+          }
+          return { ...block, uploadedUrl: json.imagePath };
+        }),
+      );
+      setBlocks(uploadedBlocks);
+      return uploadedBlocks;
     } finally {
       setIsUploadingImage(false);
     }
   };
 
-  const buildLineMessages = (imageUrl: string | null): LineMessage[] => {
-    const lineMessages: LineMessage[] = [];
-    if (showTextElement && message.trim()) {
-      lineMessages.push({
-        type: "text",
-        text: message.trim(),
-      });
-    }
-    if (showImageElement && imageUrl) {
-      lineMessages.push({
-        type: "image",
-        originalContentUrl: imageUrl,
-        previewImageUrl: imageUrl,
-      });
-    }
-    if (showGiftElement && selectedGift) {
-      if (!selectedGift.lineImageUrl) {
+  const buildLineMessages = (sourceBlocks: MessageBlock[]): LineMessage[] => {
+    return sourceBlocks.map((block): LineMessage => {
+      if (block.type === "text") {
+        return {
+          type: "text",
+          text: block.text.trim(),
+        };
+      }
+      if (block.type === "image") {
+        if (!block.uploadedUrl) {
+          throw new Error("画像を選択してください。");
+        }
+        return {
+          type: "image",
+          originalContentUrl: block.uploadedUrl,
+          previewImageUrl: block.uploadedUrl,
+        };
+      }
+      if (!block.gift) {
+        throw new Error("ギフトを選択してください。");
+      }
+      if (!block.gift.lineImageUrl) {
         throw new Error("選択したギフト画像はLINEから参照できません。ギフト画像を再保存してください。");
       }
-      if (/\.svg(\?|$)/i.test(selectedGift.lineImageUrl)) {
+      if (/\.svg(\?|$)/i.test(block.gift.lineImageUrl)) {
         throw new Error("テンプレートSVG画像はLINE Flexで表示できません。PNG/JPEG画像のギフトを選択してください。");
       }
       const buttonUrl =
         typeof window !== "undefined"
-          ? `${window.location.origin}/?giftId=${encodeURIComponent(selectedGift.id)}`
-          : `https://example.com/?giftId=${encodeURIComponent(selectedGift.id)}`;
-      lineMessages.push({
+          ? `${window.location.origin}/?giftId=${encodeURIComponent(block.gift.id)}`
+          : `https://example.com/?giftId=${encodeURIComponent(block.gift.id)}`;
+      return {
         type: "flex",
-        altText: selectedGift.title,
+        altText: notificationText.trim() || block.gift.title,
         contents: {
           type: "bubble",
           hero: {
             type: "image",
-            url: selectedGift.lineImageUrl,
+            url: block.gift.lineImageUrl,
             size: "full",
             aspectRatio: "4:3",
             aspectMode: "cover",
@@ -234,14 +325,14 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
             contents: [
               {
                 type: "text",
-                text: selectedGift.title,
+                text: block.gift.title,
                 weight: "bold",
                 size: "xl",
                 wrap: true,
               },
               {
                 type: "text",
-                text: selectedGift.usageGuide?.trim() || "タップして獲得してください",
+                text: block.gift.usageGuide?.trim() || "タップして獲得してください",
                 size: "sm",
                 color: "#6b7280",
                 wrap: true,
@@ -265,9 +356,8 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
             ],
           },
         },
-      });
-    }
-    return lineMessages;
+      };
+    });
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -275,8 +365,8 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
     if (!canSubmit || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const imageUrl = await uploadSelectedImageIfNeeded();
-      const lineMessages = buildLineMessages(imageUrl ?? null);
+      const uploadedBlocks = await uploadImagesIfNeeded(blocks);
+      const lineMessages = buildLineMessages(uploadedBlocks);
       if (lineMessages.length === 0) {
         showToast("配信メッセージを1つ以上追加してください。", true);
         return;
@@ -303,13 +393,12 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
       showToast("配信ジョブを開始しました。");
       setTitle("");
       setNotificationText("");
-      setMessage("");
-      setShowTextElement(false);
-      setShowImageElement(false);
-      setShowGiftElement(false);
-      setSelectedGift(null);
-      setSelectedImageFile(null);
-      setUploadedImageUrl(null);
+      uploadedBlocks.forEach((block) => {
+        if (block.type === "image" && block.previewUrl) {
+          URL.revokeObjectURL(block.previewUrl);
+        }
+      });
+      setBlocks([]);
       setTargetRankIds([]);
       setTargetGender(null);
       setTargetVisitCountSegments([]);
@@ -319,8 +408,9 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
       setIsSubmitting(false);
     }
   };
-
-  const previewText = message.trim() || "Hello, world";
+  const editingGift =
+    blocks.find((block): block is GiftBlock => block.id === editingGiftBlockId && block.type === "gift")
+      ?.gift ?? null;
 
   return (
     <div className="w-full p-4">
@@ -333,7 +423,8 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
             <input
               value={title}
               onChange={(event) => setTitle(event.target.value)}
-              placeholder="タイトル未設定"
+              placeholder="管理用タイトル"
+              aria-label="管理用タイトル（配信履歴に表示）"
               className="w-52 rounded border border-transparent px-2 py-1 text-base font-bold outline-none focus:border-[#cbd5e1]"
             />
           </div>
@@ -389,135 +480,175 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
               <>
                 <section className="space-y-3 rounded-lg border border-[#e2e8f0] p-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold text-[#334155]">通知テキスト</p>
+                    <p className="text-sm font-semibold text-[#334155]">Flex通知表示テキスト（任意）</p>
                   </div>
                   <input
                     value={notificationText}
                     onChange={(event) => setNotificationText(event.target.value)}
-                    placeholder="ロック画面用のテキスト"
+                    maxLength={400}
+                    placeholder="ギフト通知に表示。未入力の場合はギフト名"
                     className="w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
                   />
                 </section>
 
-                {showTextElement ? (
-                  <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                    <p className="text-sm font-semibold text-[#334155]">本文テキスト</p>
-                    <textarea
-                      value={message}
-                      onChange={(event) => setMessage(event.target.value)}
-                      placeholder="配信本文を入力してください"
-                      className="mt-2 min-h-[120px] w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
-                    />
-                  </section>
-                ) : null}
-
-                {showImageElement ? (
-                  <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                    <p className="text-sm font-semibold text-[#334155]">画像</p>
-                    <p className="mt-1 text-sm text-[#64748b]">画像を選択できます</p>
-                    <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
-                            {imagePreviewUrl ? (
-                              <img src={imagePreviewUrl} alt="選択画像プレビュー" className="h-full w-full object-cover" />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">画像</div>
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm text-[#64748b]">画像</p>
-                            <p className="truncate text-lg font-semibold text-[#0f172a]">
-                              {selectedImageFile?.name ?? "未設定"}
-                            </p>
-                          </div>
-                        </div>
+                {blocks.map((block) => (
+                  <section
+                    key={block.id}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }}
+                    onDragEnter={() => {
+                      setDragOverBlockId(block.id);
+                      if (draggedBlockId) moveBlock(draggedBlockId, block.id);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      finishDragging();
+                    }}
+                    className={`mt-3 rounded-lg border p-3 transition ${
+                      dragOverBlockId === block.id
+                        ? "border-[#0f766e] bg-[#f0fdfa]"
+                        : "border-[#e2e8f0]"
+                    } ${draggedBlockId === block.id ? "opacity-60" : ""}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={openImagePicker}
-                          disabled={isUploadingImage}
-                          className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                          draggable
+                          onDragStart={(event) => handleDragStart(event, block.id)}
+                          onDragEnd={finishDragging}
+                          aria-label="ドラッグして並べ替え"
+                          title="ドラッグして並べ替え"
+                          className="cursor-grab rounded px-1.5 py-1 text-lg leading-none text-[#94a3b8] active:cursor-grabbing"
                         >
-                          {isUploadingImage ? "アップロード中..." : "変更"}
+                          ⠿
+                        </button>
+                        <p className="text-sm font-semibold text-[#334155]">
+                          {block.type === "text" ? "本文テキスト" : block.type === "image" ? "画像" : "ギフト"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => removeBlock(block.id)}
+                          className="rounded border border-[#fecaca] px-2 py-1 text-xs font-semibold text-[#dc2626]"
+                        >
+                          削除
                         </button>
                       </div>
                     </div>
-                    <input
-                      ref={imageInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handleImageFileChange}
-                    />
-                  </section>
-                ) : null}
 
-                {showGiftElement ? (
-                  <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                    <p className="text-sm font-semibold text-[#334155]">ギフト</p>
-                    <p className="mt-1 text-sm text-[#64748b]">配信に使用するギフトを設定できます</p>
-                    <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
-                            {selectedGift ? (
-                              <img src={selectedGift.previewImageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
-                            ) : (
-                              <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">🎁</div>
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm text-[#64748b]">ギフト</p>
-                            <p className="truncate text-lg font-semibold text-[#0f172a]">
-                              {selectedGift?.title ?? "未設定"}
-                            </p>
+                    {block.type === "text" ? (
+                      <textarea
+                        value={block.text}
+                        onChange={(event) => updateTextBlock(block.id, event.target.value)}
+                        placeholder="配信本文を入力してください"
+                        className="mt-2 min-h-[120px] w-full rounded-lg border border-[#cbd5e1] px-3 py-2 text-sm outline-none focus:border-[#0f766e]"
+                      />
+                    ) : null}
+
+                    {block.type === "image" ? (
+                      <>
+                        <p className="mt-1 text-sm text-[#64748b]">画像を選択できます</p>
+                        <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
+                                {block.previewUrl ? (
+                                  <img src={block.previewUrl} alt="選択画像プレビュー" className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">画像</div>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm text-[#64748b]">画像</p>
+                                <p className="truncate text-lg font-semibold text-[#0f172a]">
+                                  {block.file?.name ?? "未設定"}
+                                </p>
+                              </div>
+                            </div>
+                            <label className="cursor-pointer rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]">
+                              変更
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={isUploadingImage}
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0];
+                                  if (file) updateImageBlock(block.id, file);
+                                  event.target.value = "";
+                                }}
+                              />
+                            </label>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={openGiftSheet}
-                          className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
-                        >
-                          変更
-                        </button>
-                      </div>
-                    </div>
+                      </>
+                    ) : null}
+
+                    {block.type === "gift" ? (
+                      <>
+                        <p className="mt-1 text-sm text-[#64748b]">配信に使用するギフトを設定できます</p>
+                        <div className="mt-3 rounded-lg border border-[#e2e8f0] bg-[#fafafa] p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <div className="h-14 w-14 overflow-hidden rounded border border-[#dbe2ea] bg-white">
+                                {block.gift ? (
+                                  <img src={block.gift.previewImageUrl} alt={block.gift.title} className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center text-xs text-[#94a3b8]">🎁</div>
+                                )}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm text-[#64748b]">ギフト</p>
+                                <p className="truncate text-lg font-semibold text-[#0f172a]">
+                                  {block.gift?.title ?? "未設定"}
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => openGiftSheet(block.id)}
+                              className="rounded-lg border border-[#cbd5e1] px-4 py-2 text-sm font-semibold text-[#334155]"
+                            >
+                              変更
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
                   </section>
-                ) : null}
+                ))}
 
                 <section className="mt-3 rounded-lg border border-[#e2e8f0] p-3">
-                  <p className="text-sm font-semibold text-[#334155]">追加する要素</p>
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold text-[#334155]">追加する要素</p>
+                    <p className="text-xs font-semibold text-[#64748b]">{blocks.length} / {MAX_MESSAGE_BLOCKS}件</p>
+                  </div>
                   <div className="mt-3 grid grid-cols-5 gap-2 text-center text-xs text-[#334155]">
                     <button
                       type="button"
-                      onClick={() => setShowTextElement(true)}
-                      className={`rounded border px-2 py-3 ${
-                        showTextElement
-                          ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
-                          : "border-[#dbe2ea] bg-[#f8fafc]"
-                      }`}
+                      onClick={() => addBlock("text")}
+                      disabled={blocks.length >= MAX_MESSAGE_BLOCKS}
+                      className="rounded border border-[#dbe2ea] bg-[#f8fafc] px-2 py-3 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       テキスト
                     </button>
                     <button
                       type="button"
-                      onClick={openImagePicker}
-                      className={`rounded border px-2 py-3 ${
-                        showImageElement
-                          ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
-                          : "border-[#dbe2ea] bg-[#f8fafc]"
-                      }`}
+                      onClick={() => addBlock("image")}
+                      disabled={blocks.length >= MAX_MESSAGE_BLOCKS}
+                      className="rounded border border-[#dbe2ea] bg-[#f8fafc] px-2 py-3 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       画像
                     </button>
                     <button
                       type="button"
-                      onClick={openGiftSheet}
-                      className={`rounded border px-2 py-3 ${
-                        showGiftElement
-                          ? "border-[#0f766e] bg-[#ecfeff] font-semibold text-[#0f766e]"
-                          : "border-[#dbe2ea] bg-[#f8fafc]"
-                      }`}
+                      onClick={() => addBlock("gift")}
+                      disabled={blocks.length >= MAX_MESSAGE_BLOCKS}
+                      className="rounded border border-[#dbe2ea] bg-[#f8fafc] px-2 py-3 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       ギフト
                     </button>
@@ -606,52 +737,58 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
             <div className="mx-auto w-full max-w-[320px] rounded-2xl bg-[#84a5d3] p-3 shadow-inner">
               <div className="mb-3 h-10 w-10 rounded-full bg-[#6d8fbe]" />
 
-              {showTextElement ? (
-                <div className="mb-3 w-fit max-w-[92%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 shadow-sm">
-                  <p className="whitespace-pre-wrap text-[15px] text-[#0f172a]">{previewText}</p>
-                  <p className="mt-2 text-[11px] font-semibold text-[#94a3b8]">type: text</p>
-                </div>
-              ) : null}
-
-              {showImageElement ? (
-                <div className="mb-3 w-[92%] overflow-hidden rounded-2xl bg-white shadow-sm">
-                  {imagePreviewUrl ? (
-                    <img src={imagePreviewUrl} alt="LINE画像メッセージプレビュー" className="h-44 w-full object-cover" />
-                  ) : (
-                    <div className="flex h-44 items-center justify-center text-xs text-[#94a3b8]">画像未設定</div>
-                  )}
-                  <div className="px-3 py-2">
-                    <p className="text-[11px] font-semibold text-[#94a3b8]">type: image</p>
+              {blocks.map((block) => {
+                if (block.type === "text") {
+                  return (
+                    <div key={block.id} className="mb-3 w-fit max-w-[92%] rounded-2xl rounded-tl-sm bg-white px-3 py-2 shadow-sm">
+                      <p className="whitespace-pre-wrap text-[15px] text-[#0f172a]">
+                        {block.text.trim() || "本文を入力して下さい"}
+                      </p>
+                      <p className="mt-2 text-[11px] font-semibold text-[#94a3b8]">type: text</p>
+                    </div>
+                  );
+                }
+                if (block.type === "image") {
+                  return (
+                    <div key={block.id} className="mb-3 w-[92%] overflow-hidden rounded-2xl bg-white shadow-sm">
+                      {block.previewUrl ? (
+                        <img src={block.previewUrl} alt="LINE画像メッセージプレビュー" className="h-44 w-full object-cover" />
+                      ) : (
+                        <div className="flex h-44 items-center justify-center text-xs text-[#94a3b8]">画像未設定</div>
+                      )}
+                      <div className="px-3 py-2">
+                        <p className="text-[11px] font-semibold text-[#94a3b8]">type: image</p>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={block.id} className="mb-3 w-[92%] overflow-hidden rounded-2xl bg-white shadow-sm">
+                    <div className="h-52 w-full overflow-hidden bg-[#d1fae5]">
+                      {block.gift ? (
+                        <img src={block.gift.previewImageUrl} alt={block.gift.title} className="h-full w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-sm text-[#94a3b8]">ギフト画像未設定</div>
+                      )}
+                    </div>
+                    <div className="space-y-2 p-4">
+                      <p className="text-3xl font-bold leading-tight text-[#111827]">
+                        {block.gift?.title ?? "ギフト未設定"}
+                      </p>
+                      <p className="text-sm text-[#6b7280]">
+                        {block.gift?.usageGuide?.trim() || "タップして獲得してください"}
+                      </p>
+                      <button
+                        type="button"
+                        className="w-full rounded-lg bg-[#0f9f99] px-3 py-3 text-base font-bold text-white"
+                      >
+                        このギフトを獲得する
+                      </button>
+                      <p className="text-[11px] font-semibold text-[#94a3b8]">type: flex</p>
+                    </div>
                   </div>
-                </div>
-              ) : null}
-
-              {showGiftElement ? (
-                <div className="mb-3 w-[92%] overflow-hidden rounded-2xl bg-white shadow-sm">
-                  <div className="h-52 w-full overflow-hidden bg-[#d1fae5]">
-                    {selectedGift ? (
-                        <img src={selectedGift.previewImageUrl} alt={selectedGift.title} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-sm text-[#94a3b8]">ギフト画像未設定</div>
-                    )}
-                  </div>
-                  <div className="space-y-2 p-4">
-                    <p className="text-3xl font-bold leading-tight text-[#111827]">
-                      {selectedGift?.title ?? "ギフト未設定"}
-                    </p>
-                    <p className="text-sm text-[#6b7280]">
-                      {selectedGift?.usageGuide?.trim() || "タップして獲得してください"}
-                    </p>
-                    <button
-                      type="button"
-                      className="w-full rounded-lg bg-[#0f9f99] px-3 py-3 text-base font-bold text-white"
-                    >
-                      このギフトを獲得する
-                    </button>
-                    <p className="text-[11px] font-semibold text-[#94a3b8]">type: flex</p>
-                  </div>
-                </div>
-              ) : null}
+                );
+              })}
 
               <div className="text-right text-xs text-[#5f7fa8]">07:19</div>
             </div>
@@ -690,12 +827,19 @@ export default function SpotDeliveryEditorClient({ gifts, rankOptions, targetCou
                     key={gift.id}
                     type="button"
                     onClick={() => {
-                      setSelectedGift(gift);
-                      setShowGiftElement(true);
+                      if (editingGiftBlockId) {
+                        setBlocks((prev) =>
+                          prev.map((block) =>
+                            block.id === editingGiftBlockId && block.type === "gift"
+                              ? { ...block, gift }
+                              : block,
+                          ),
+                        );
+                      }
                       setIsGiftSheetOpen(false);
                     }}
                     className={`flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left ${
-                      selectedGift?.id === gift.id
+                      editingGift?.id === gift.id
                         ? "border-[#0f766e] bg-[#ecfeff]"
                         : "border-[#e2e8f0] bg-white"
                     }`}

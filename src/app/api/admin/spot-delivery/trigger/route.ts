@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 
 const triggerPayloadSchema = z.object({
   title: z.string().trim().max(120, "タイトルは120文字以内です。").optional().default(""),
-  notificationText: z.string().trim().max(1000, "通知テキストは1000文字以内です。").optional().default(""),
+  notificationText: z.string().trim().max(400, "通知表示テキストは400文字以内です。").optional().default(""),
   messages: z
     .array(
       z.union([
@@ -27,7 +27,8 @@ const triggerPayloadSchema = z.object({
         }),
       ]),
     )
-    .min(1, "配信メッセージを1つ以上追加してください。"),
+    .min(1, "配信メッセージを1つ以上追加してください。")
+    .max(5, "配信メッセージは5つ以内にしてください。"),
   targetFilters: z
     .object({
       rankIds: z.array(z.string().min(1)).optional().default([]),

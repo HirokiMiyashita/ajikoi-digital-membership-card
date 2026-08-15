@@ -8,6 +8,8 @@ import SpotDeliveryClient from "./spot-delivery-client";
 type DeliveryHistoryRow = {
   id: string;
   title: string;
+  notificationText: string;
+  messages: unknown;
   sentAt: string;
   sent: number;
   failed: number;
@@ -98,11 +100,17 @@ export default async function AdminSpotDeliveryPage() {
     const metadataTitle = typeof metadata.title === "string" ? metadata.title : "";
     const metadataMessage = typeof metadata.message === "string" ? metadata.message : "";
     const title = metadataTitle.trim() || metadataMessage.trim() || "タイトル未設定";
+    const notificationText =
+      typeof metadata.notificationText === "string"
+        ? metadata.notificationText
+        : metadataMessage;
     const sent = typeof metadata.sent === "number" ? metadata.sent : 0;
     const failed = typeof metadata.failed === "number" ? metadata.failed : 0;
     return {
       id: row.id,
       title,
+      notificationText,
+      messages: metadata.messages ?? [],
       sentAt: row.createdAt.toISOString(),
       sent,
       failed,

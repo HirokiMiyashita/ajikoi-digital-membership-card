@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 const triggerSettingSchema = z.object({
   title: z.string().trim().min(1, "タイトルを入力してください。").optional(),
   triggerType: z.nativeEnum(LineDeliveryTriggerType).optional(),
-  notificationText: z.string().trim().max(1000, "通知テキストは1000文字以内です。").optional(),
+  notificationText: z.string().trim().max(400, "通知表示テキストは400文字以内です。").optional(),
   messages: z
     .array(
       z.union([
@@ -30,6 +30,7 @@ const triggerSettingSchema = z.object({
       ]),
     )
     .min(1, "配信メッセージを1つ以上追加してください。")
+    .max(5, "配信メッセージは5つ以内にしてください。")
     .optional(),
   targetRankIds: z.array(z.string().min(1)).max(20).optional(),
   targetGender: z.enum(["male", "female", "other"]).nullable().optional(),

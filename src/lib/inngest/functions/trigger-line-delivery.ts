@@ -5,7 +5,7 @@ import { z } from "zod";
 
 const triggerLineDeliveryPayloadSchema = z.object({
   title: z.string().optional().default(""),
-  notificationText: z.string().optional().default(""),
+  notificationText: z.string().max(400).optional().default(""),
   messages: z
     .array(
       z.union([
@@ -25,7 +25,8 @@ const triggerLineDeliveryPayloadSchema = z.object({
         }),
       ]),
     )
-    .min(1),
+    .min(1)
+    .max(5),
   officialAccountId: z.string().min(1),
   targetUserIds: z.array(z.string().min(1)).optional().default([]),
   scheduledAt: z.string().datetime().nullable().optional().default(null),
