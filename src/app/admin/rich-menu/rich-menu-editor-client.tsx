@@ -112,6 +112,10 @@ export default function RichMenuEditorClient({
     [templateKey],
   );
   const currentAction = areas[selectedArea] ?? ({ type: "none" } as const);
+  const currentActionEditorType =
+    currentAction.type === "uri" && currentAction.uri.startsWith("tel:")
+      ? "phone"
+      : currentAction.type;
   const isBusy = operation !== null;
 
   const showNotice = (message: string, kind: Notice["kind"]) => {
@@ -129,6 +133,13 @@ export default function RichMenuEditorClient({
     for (const [index, action] of areas.entries()) {
       const areaName = `エリア${AREA_LABELS[index]}`;
       if (action.type === "uri") {
+        if (action.uri.startsWith("tel:")) {
+          const phoneNumber = action.uri.slice(4).replace(/[()\-\s]/g, "");
+          if (!/^\+?\d{8,15}$/.test(phoneNumber)) {
+            return `${areaName}に有効な電話番号を入力してください。`;
+          }
+          continue;
+        }
         try {
           const protocol = new URL(action.uri).protocol;
           if (!["https:", "http:", "tel:", "mailto:"].includes(protocol)) {
@@ -663,10 +674,11 @@ export default function RichMenuEditorClient({
                       エリア{AREA_LABELS[selectedArea]}の動作
                     </span>
                     <select
-                      value={currentAction.type}
+                      value={currentActionEditorType}
                       onChange={(event) => {
-                        const type = event.target.value as RichMenuAction["type"];
+                        const type = event.target.value;
                         if (type === "uri") updateAction({ type, uri: "" });
+                        else if (type === "phone") updateAction({ type: "uri", uri: "tel:" });
                         else if (type === "message") updateAction({ type, text: "" });
                         else if (type === "postback") {
                           updateAction({ type, data: "", displayText: "" });
@@ -676,12 +688,13 @@ export default function RichMenuEditorClient({
                     >
                       <option value="none">未設定</option>
                       <option value="uri">リンク</option>
+                      <option value="phone">電話番号</option>
                       <option value="message">メッセージ</option>
                       <option value="postback">ポストバック</option>
                     </select>
                   </label>
 
-                  {currentAction.type === "uri" ? (
+                  {currentAction.type === "uri" && !currentAction.uri.startsWith("tel:") ? (
                     <label className="mt-4 block">
                       <span className="mb-1 block text-sm font-semibold text-[#334155]">リンク先URL</span>
                       <input
@@ -704,6 +717,28 @@ export default function RichMenuEditorClient({
                           店舗のLIFF URLを設定
                         </button>
                       ) : null}
+                    </label>
+                  ) : null}
+
+                  {currentAction.type === "uri" && currentAction.uri.startsWith("tel:") ? (
+                    <label className="mt-4 block">
+                      <span className="mb-1 block text-sm font-semibold text-[#334155]">
+                        電話番号
+                      </span>
+                      <input
+                        type="tel"
+                        inputMode="tel"
+                        value={currentAction.uri.slice(4)}
+                        onChange={(event) =>
+                          updateAction({ type: "uri", uri: `tel:${event.target.value}` })
+                        }
+                        placeholder="09012345678"
+                        maxLength={30}
+                        className="w-full rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-sm"
+                      />
+                      <span className="mt-1 block text-xs text-[#64748b]">
+                        タップすると端末の電話発信確認画面が開きます。`tel:`は自動で付与されます。
+                      </span>
                     </label>
                   ) : null}
 

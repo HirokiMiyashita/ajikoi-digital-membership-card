@@ -10,6 +10,10 @@ const richMenuUriSchema = z
   .min(1)
   .max(1000)
   .refine((value) => {
+    if (value.startsWith("tel:")) {
+      const phoneNumber = value.slice(4).replace(/[()\-\s]/g, "");
+      return /^\+?\d{8,15}$/.test(phoneNumber);
+    }
     try {
       return ["https:", "http:", "tel:", "mailto:"].includes(
         new URL(value).protocol,
